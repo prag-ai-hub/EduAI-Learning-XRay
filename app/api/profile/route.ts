@@ -1,0 +1,52 @@
+import { getAuthenticatedUser, unauthorized } from "../../../lib/supabase-auth";
+import { getSupabaseServer } from "../../../lib/supabase-server";
+
+export async function GET(request: Request) {
+  const authUser = await getAuthenticatedUser(request);
+  if (!authUser) return unauthorized();
+  const db = getSupabaseServer();
+  const { data: user, error } = await db.from("users").select("*").eq("id", authUser.id).maybeSingle();
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (!user) return Response.json({ profile: null });
+  const { data: school } = await db.from("schools").select("name").eq("id", user.school_id).maybeSingle();
+  return Response.json({ profile: { ...user, school: school?.name || "" } });
+}
+
+export async function PUT(request: Request) {
+  const authUser = await getAuthenticatedUser(request);
+  if (!authUser) return unauthorized();
+  const body = await request.json() as {
+    name?: string; school?: string; phone?: string; subjects?: string; classes?: string;
+  };
+  const name = String(body.name || "").trim();
+  const schoolName = String(body.school || "").trim();
+  if (name.length < 2 || schoolName.length < 2) {
+    return Response.json({ error: "Name and school are required." }, { status: 400 });
+  }
+  const db = getSupabaseServer();
+  const schoolId = `school-${authUser.id}`;
+  const { error: schoolError } = await db.from("schools").upsert({
+    id: schoolId,
+    name: schoolName,
+    updated_at: new Date().toISOString(),
+  });
+  if (schoolError) return Response.json({ error: schoolError.message }, { status: 500 });
+  const profile = {
+    id: authUser.id,
+    school_id: schoolId,
+    email: authUser.email || "",
+    name,
+    role: "Teacher",
+    phone: String(body.phone || "").trim(),
+    status: "Active",
+    profile_json: {
+      subjects: String(body.subjects || "").trim(),
+      classes: String(body.classes || "").trim(),
+      onboarding_complete: true,
+    },
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await db.from("users").upsert(profile);
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+  return Response.json({ profile: { ...profile, school: schoolName } });
+}
