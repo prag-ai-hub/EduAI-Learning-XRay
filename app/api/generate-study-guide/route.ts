@@ -6,7 +6,7 @@ type StudyGuideRequest = {
   feedback?: string;
   ocrText?: string;
   evidenceFiles?: string[];
-  gaps?: {concept:string;mastery:number;finding?:string;misconception?:string;evidence?:string;rework?:string}[];
+  gaps?: {concept:string;mastery:number;finding?:string;misconception?:string;evidence?:string;prerequisiteConcept?:string;foundationGap?:string;recommendedLevel?:string;remediationSequence?:string[];rework?:string}[];
 };
 
 type StudyGuide = {
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       `Answer-sheet OCR evidence:\n${(body.ocrText || "").slice(0, 12000) || "No OCR excerpt available"}\n\n` +
       `Uploaded source set:\n${(body.evidenceFiles || []).join("\n") || "No source filenames supplied"}\n\n` +
       `All diagnosed learning gaps, in priority order:\n${gaps.map((gap,index)=>`${index+1}. ${gap.concept} (${gap.mastery}% mastery)\nFinding: ${gap.finding||""}\nMisconception: ${gap.misconception||""}\nEvidence: ${gap.evidence||""}\nRework: ${gap.rework||""}`).join("\n\n")||concept}\n\n` +
-      "Create a complete, editable study guide with one topic section for EVERY listed gap. Preserve the priority order and ground each explanation, example and activity in its diagnostic finding. Keep every example and question within the stated subject. " +
+      "Create a complete, editable study guide with one topic section for EVERY listed gap. Follow the evidence-supported learning dependency: foundation, then prerequisite, then current concept, then a short check. Include lower-class material only when the diagnostic evidence supports it. Use simple English for a Class 9-10 student, short clear sentences, explained terms, worked examples, and 2-3 practice questions at each necessary step. " +
       "Do not introduce mathematics examples unless the subject or evidence is mathematical.";
 
     const startedAt = Date.now();
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
           {
             role: "system",
             content:
-              "You create evidence-based remedial study guides for teachers. Return only JSON with this exact shape: " +
+              "You create academically accurate, evidence-based remedial study guides written so a Class 9-10 student can understand them without an adult explaining difficult language. Return only JSON with this exact shape: " +
               '{"title":string,"overview":string,"topics":[{"concept":string,"mastery":number,"diagnosis":string,"learningObjective":string,"explanation":string,"workedExample":string,' +
               '"practiceSteps":[string,string,string],"checkForUnderstanding":[string,string,string]}]}. Include exactly one topic object for every supplied learning gap.',
           },

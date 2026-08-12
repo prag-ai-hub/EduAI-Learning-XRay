@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   if (error) return Response.json({ error: error.message }, { status: 500 });
   if (!user) return Response.json({ profile: null });
   const { data: school } = await db.from("schools").select("name").eq("id", user.school_id).maybeSingle();
-  return Response.json({ profile: { ...user, school: school?.name || "" } });
+  return Response.json({ profile: { ...user, school: school?.name || "", remaining_credits: Math.max(0,(user.total_credits||0)-(user.used_credits||0)) } });
 }
 
 export async function PUT(request: Request) {
@@ -36,7 +36,7 @@ export async function PUT(request: Request) {
     school_id: schoolId,
     email: authUser.email || "",
     name,
-    role: "Teacher",
+    role: /^priyadarshini\.adap@eduaihub(?:\.in)?$/i.test(authUser.email || "") ? "Admin" : "Teacher",
     phone: String(body.phone || "").trim(),
     status: "Active",
     profile_json: {
