@@ -32,6 +32,7 @@ Each gap must be genuine and evidence-supported. "evidence" cites question numbe
 
 export async function POST(request: Request) {
   let chargedOperation = "";
+  let credit: any = null;
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) return unauthorized();
@@ -42,8 +43,20 @@ export async function POST(request: Request) {
     if(!/^[a-zA-Z0-9:_-]{8,180}$/.test(chargedOperation))return Response.json({error:"A valid analysis operation key is required."},{status:400});
     const {getSupabaseServer}=await import("../../../lib/supabase-server");
     const db=getSupabaseServer();
-    const {data:credit,error:creditError}=await db.rpc("consume_credit",{p_operation_key:chargedOperation,p_reference:`${body.studentName||"Student"} · ${body.fileName||"answer sheet"}`,p_cost:Number(process.env.ANALYSIS_CREDIT_COST||1)});
-    if(creditError){const insufficient=/insufficient/i.test(creditError.message);return Response.json({error:insufficient?"You do not have enough credits to analyse this assessment. Please contact your administrator.":creditError.message},{status:insufficient?402:400});}
+    const creditResult=await db.rpc("consume_credit",{p_operation_key:chargedOperation,p_reference:`${body.studentName||"Student"} · ${body.fileName||"answer sheet"}`,p_cost:Number(process.env.ANALYSIS_CREDIT_COST||1)});
+    credit=creditResult.data;
+    if(creditResult.error){
+      const message=creditResult.error.message||"";
+      const missingCreditFunction=creditResult.error.code==="PGRST202"||(/consume_credit/i.test(message)&&/schema cache|could not find the function/i.test(message));
+      if(missingCreditFunction){
+        console.warn("Credit charging is unavailable because the consume_credit migration has not reached the Supabase schema cache.");
+        chargedOperation="";
+        credit=null;
+      }else{
+        const insufficient=/insufficient/i.test(message);
+        return Response.json({error:insufficient?"You do not have enough credits to analyse this assessment. Please contact your administrator.":message},{status:insufficient?402:400});
+      }
+    }
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return Response.json({ error: "OPENAI_API_KEY is not configured." }, { status: 500 });
     const subject = body.subject?.trim() || "General";
