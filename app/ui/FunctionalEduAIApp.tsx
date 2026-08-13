@@ -1436,9 +1436,16 @@ function openFileDb():Promise<IDBDatabase>{return new Promise((resolve,reject)=>
 async function saveLocalFileBlob(id:string,file:Blob){const db=await openFileDb();await new Promise<void>((resolve,reject)=>{const tx=db.transaction("files","readwrite");tx.objectStore("files").put(file,id);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error)});db.close()}
 async function readLocalFileBlob(id:string):Promise<Blob|null>{const db=await openFileDb();const value=await new Promise<any>((resolve,reject)=>{const request=db.transaction("files").objectStore("files").get(id);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)});db.close();return value||null}
 async function removeLocalFileBlob(id:string){const db=await openFileDb();await new Promise<void>((resolve,reject)=>{const tx=db.transaction("files","readwrite");tx.objectStore("files").delete(id);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error)});db.close()}
-async function saveFileBlob(id:string,file:Blob){await saveLocalFileBlob(id,file);const response=await authFetch(`/api/files/${encodeURIComponent(id)}`,{method:"PUT",headers:{"Content-Type":file.type||"application/octet-stream"},body:file});if(!response.ok)throw new Error("Cloud file upload failed")}
-async function readFileBlob(id:string):Promise<Blob|null>{const cached=await readLocalFileBlob(id);if(cached)return cached;try{const response=await authFetch(`/api/files/${encodeURIComponent(id)}`);if(!response.ok)return null;const blob=await response.blob();await saveLocalFileBlob(id,blob);return blob}catch{return null}}
-async function removeFileBlob(id:string){await removeLocalFileBlob(id);await authFetch(`/api/files/${encodeURIComponent(id)}`,{method:"DELETE"})}
+async function saveFileBlob(id:string,file:Blob){
+  const response=await authFetch(`/api/files/${encodeURIComponent(id)}`,{method:"PUT",headers:{"Content-Type":file.type||"application/octet-stream"},body:file});
+  if(!response.ok){let message="Cloud file upload failed";try{const payload=await response.json();if(payload?.error)message=payload.error}catch{}throw new Error(message)}
+  try{await saveLocalFileBlob(id,file)}catch{/* Browser storage is an optional cache; the secure cloud copy is authoritative. */}
+}
+async function readFileBlob(id:string):Promise<Blob|null>{
+  try{const cached=await readLocalFileBlob(id);if(cached)return cached}catch{/* Fall through to secure cloud storage. */}
+  try{const response=await authFetch(`/api/files/${encodeURIComponent(id)}`,{cache:"no-store"});if(!response.ok)return null;const blob=await response.blob();try{await saveLocalFileBlob(id,blob)}catch{}return blob}catch{return null}
+}
+async function removeFileBlob(id:string){try{await removeLocalFileBlob(id)}catch{}await authFetch(`/api/files/${encodeURIComponent(id)}`,{method:"DELETE"})}
 function blobToBase64(blob:Blob):Promise<string>{return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onloadend=()=>{const result=reader.result as string;resolve(result.split(",")[1]||"")};reader.onerror=()=>reject(reader.error);reader.readAsDataURL(blob)})}
 
 function UploadDialogV2({assessment,update,done}:any){
