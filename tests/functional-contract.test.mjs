@@ -127,6 +127,12 @@ test("multi-file evidence is appended safely and analysis mapping is explicitly 
   assert.match(app, /section:selectedMapping\?\.section/);
 });
 
+test("multi-student analysis resumes after each generated worksheet", () => {
+  assert.match(app, /saveBulkAnalysisQueue\(assessment\.id,pending\.map/);
+  assert.match(app, /advanceBulkAnalysisQueue\(selected\.id,id\)/);
+  assert.match(app, /Continuing with the next selected student/);
+});
+
 test("active class master data and visible terminology use Class consistently", () => {
   for (const visibleClassText of ["Class 6A · Mathematics", "All classes", 'Field label="Class"', "Class 6 performance trend"]) {
     assert.ok(app.includes(visibleClassText), `missing class terminology: ${visibleClassText}`);
@@ -181,6 +187,8 @@ test("all generated downloads use branded PDF documents with reusable visuals", 
   assert.doesNotMatch(app, /application\/msword/);
   assert.doesNotMatch(app, /a\.download=.*\.doc`/);
   assert.doesNotMatch(app, /type:"text\/plain;charset=utf-8"/);
+  assert.match(app, /Resource_Generation_Status\.pdf/);
+  assert.doesNotMatch(app, /Missing_Files\.txt/);
 });
 
 test("heatmap uses weak, average and excellent score bands", () => {
