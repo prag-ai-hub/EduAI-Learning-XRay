@@ -1352,7 +1352,9 @@ async function createBrandedPdfBlob(title:string,meta:string,body:string,include
   }finally{host.remove()}
 }
 async function downloadDocument(name:string,title:string,meta:string,body:string,includeFlow=true){
-  const blob=await createBrandedPdfBlob(title,meta,body,includeFlow);
+  const generated=await createBrandedPdfBlob(title,meta,body,includeFlow);
+  const bytes=await verifiedPdfBytes(generated);
+  const blob=new Blob([bytes as BlobPart],{type:"application/pdf"});
   const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`${name.replace(/\.[^.]+$/,"").replace(/[^a-z0-9-]+/gi,"-")}.pdf`;a.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function worksheetDocumentBody(content?:WorksheetContent){const questions=[...(content?.mcqQuestions||[]).map((q:any,i:number)=>`<li><span class="label">${htmlEscape(q.concept||"Topic")}</span><b>${i+1}. ${htmlEscape(q.question)}</b><div class="options">${q.options.map((o:string,j:number)=>`${String.fromCharCode(65+j)}. ${htmlEscape(o)}`).join("<br>")}</div></li>`),...(content?.subjectiveQuestions||[]).map((q:any,i:number)=>`<li><span class="label">${htmlEscape(q.concept||"Topic")}</span><b>${(content?.mcqQuestions.length||0)+i+1}. ${htmlEscape(q.question)}</b><p>Answer:</p><br><br></li>`)].join("");return `<h2>Student details</h2><p>Name: ____________________ &nbsp;&nbsp; Date: __________ &nbsp;&nbsp; Teacher: ____________________</p><h2>Instructions</h2><p>Answer every question. Show working or supporting evidence where required.</p><ol>${questions}</ol>`}
@@ -1423,7 +1425,8 @@ function UploadedFiles({assessment,update,notify,open}:any){
     const url=URL.createObjectURL(blob);
     if(!download){window.open(url,"_blank","noopener,noreferrer");return}
     if(blob.type==="application/pdf"||/\.pdf$/i.test(file.name)){
-      const a=document.createElement("a");a.href=url;a.download=file.name.replace(/\.[^.]+$/,"")+".pdf";a.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000);return;
+      URL.revokeObjectURL(url);
+      try{const bytes=await verifiedPdfBytes(blob);const pdfUrl=URL.createObjectURL(new Blob([bytes as BlobPart],{type:"application/pdf"}));const a=document.createElement("a");a.href=pdfUrl;a.download=file.name.replace(/\.[^.]+$/,"")+".pdf";a.click();window.setTimeout(()=>URL.revokeObjectURL(pdfUrl),1000)}catch{notify(`${file.name} is labelled as PDF but its contents are not a valid PDF. Re-upload or convert the original file.`,"error")};return;
     }
     URL.revokeObjectURL(url);
     let body="";
