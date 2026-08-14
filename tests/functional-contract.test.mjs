@@ -127,10 +127,30 @@ test("multi-file evidence is appended safely and analysis mapping is explicitly 
   assert.match(app, /section:selectedMapping\?\.section/);
 });
 
-test("multi-student analysis resumes after each generated worksheet", () => {
+test("multi-student analysis resumes when background generation starts", () => {
   assert.match(app, /saveBulkAnalysisQueue\(assessment\.id,pending\.map/);
-  assert.match(app, /advanceBulkAnalysisQueue\(selected\.id,id\)/);
-  assert.match(app, /Continuing with the next selected student/);
+  assert.match(app, /advanceBulkAnalysisQueue\(assessment\.id,file\.id\)/);
+  assert.match(app, /open\(nextFileId\?/);
+});
+
+test("teacher can generate all reports while the next student's OCR starts", () => {
+  assert.match(app, /Generate All Reports/);
+  assert.match(app, /generateAllStudentResources/);
+  assert.match(app, /Reports are generating in the background/);
+  assert.match(app, /bulkAnalysisQueue\(assessment\.id\)\.includes\(file\.id\)/);
+  assert.match(app, /open\(nextFileId\?/);
+});
+
+test("principal dashboard provides four-band class and subject drill-down", () => {
+  for (const label of ["90% and above", "75–89%", "55–74%", "Below 55%", "School performance matrix", "Class drill-down"]) assert.ok(app.includes(label));
+  assert.match(app, /score>=90\?"green":score>=75\?"yellow":score>=55\?"orange":"red"/);
+  assert.match(app, /setSelectedCell/);
+});
+
+test("resources expose student-specific signed parent QR sharing", () => {
+  assert.match(app, /parent-share:/);
+  assert.match(app, /Share with parent/);
+  assert.match(app, /ParentShareDialog/);
 });
 
 test("active class master data and visible terminology use Class consistently", () => {
@@ -330,7 +350,7 @@ test("OCR must be teacher-validated before CBSE gap analysis", () => {
   const ocr = readFileSync(new URL("../app/api/ocr/route.ts", import.meta.url), "utf8");
   assert.doesNotMatch(ocr, /api\.openai\.com/);
   assert.doesNotMatch(grade, /api\.mistral\.ai/);
-  for (const behavior of ["Check the extracted text", "Teacher validation required", "Validate OCR text & generate learning-gap report", 'authFetch("/api/ocr"', 'authFetch("/api/grade"']) assert.ok(app.includes(behavior), `missing OCR validation behavior: ${behavior}`);
+  for (const behavior of ["Check the extracted text", "Teacher validation required", "Generate All Reports", 'authFetch("/api/ocr"', 'authFetch("/api/grade"']) assert.ok(app.includes(behavior), `missing OCR validation behavior: ${behavior}`);
   assert.match(grade, /Focus ONLY on questions that are completely wrong, partially correct, unanswered, incomplete/);
   assert.match(grade, /Do not create learning gaps from fully correct answers/);
   assert.match(grade, /observed error -> immediate gap -> misconception\/skill weakness -> prerequisite gap -> learning consequence/);
