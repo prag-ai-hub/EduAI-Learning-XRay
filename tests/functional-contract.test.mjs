@@ -189,6 +189,10 @@ test("all generated downloads use branded PDF documents with reusable visuals", 
   assert.doesNotMatch(app, /type:"text\/plain;charset=utf-8"/);
   assert.match(app, /Resource_Generation_Status\.pdf/);
   assert.doesNotMatch(app, /Missing_Files\.txt/);
+  assert.match(app, /worksheetDocumentBody\(worksheet\.content\),false/);
+  assert.match(app, /answerKeyDocumentBody\(worksheet\.content\),false/);
+  assert.match(app, /studyGuideDocumentBody\(guide\.guide\)/);
+  assert.match(app, /String\.fromCharCode\(\.\.\.bytes\.slice\(0,5\)\)!=="%PDF-"/);
 });
 
 test("heatmap uses weak, average and excellent score bands", () => {
