@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 
 const app = readFileSync(new URL("../app/ui/FunctionalEduAIApp.tsx", import.meta.url), "utf8");
+const parentShare = readFileSync(new URL("../app/ui/ParentShareDialog.tsx", import.meta.url), "utf8");
 const login = readFileSync(new URL("../app/signin/page.tsx", import.meta.url), "utf8");
 const marketing = readFileSync(new URL("../app/ui/MarketingHome.tsx", import.meta.url), "utf8");
 
@@ -158,9 +159,22 @@ test("reports name the former heatmap Performance matrix report", () => {
 });
 
 test("principal dashboard provides four-band class and subject drill-down", () => {
-  for (const label of ["90% and above", "75–89%", "55–74%", "Below 55%", "School performance matrix", "Class drill-down"]) assert.ok(app.includes(label));
-  assert.match(app, /score>=90\?"green":score>=75\?"yellow":score>=55\?"orange":"red"/);
+  for (const label of ["90% and above", "75–89%", "55–74%", "Below 55%", "Performance matrix report", "Class drill-down"]) assert.ok(app.includes(label));
+  assert.match(app, /percentage>=90\?"green":percentage>=75\?"yellow":percentage>=55\?"orange":"red"/);
   assert.match(app, /setSelectedCell/);
+});
+
+test("performance matrix report uses majority bands and student drill-down", () => {
+  for (const threshold of ["percentage>=90", "percentage>=75", "percentage>=55"]) assert.ok(app.includes(threshold));
+  assert.match(app, /majority \$\{data\.band\}/);
+  assert.match(app, /SchoolPerformanceMatrix/);
+  assert.match(app, /Class drill-down/);
+});
+
+test("QR sharing copies with a compatible fallback and status", () => {
+  assert.match(parentShare, /navigator\.clipboard\?\.writeText/);
+  assert.match(parentShare, /document\.execCommand\("copy"\)/);
+  assert.match(parentShare, /Press Ctrl\+C to copy the selected link/);
 });
 
 test("resources expose student-specific signed parent QR sharing", () => {
@@ -223,11 +237,14 @@ test("all generated downloads use branded PDF documents with reusable visuals", 
   assert.doesNotMatch(app, /application\/msword/);
   assert.doesNotMatch(app, /a\.download=.*\.doc`/);
   assert.doesNotMatch(app, /type:"text\/plain;charset=utf-8"/);
-  assert.match(app, /Resource_Generation_Status\.pdf/);
+  assert.doesNotMatch(app, /Resource_Generation_Status\.pdf/);
+  assert.match(app, /All four reports must finish generating before download/);
+  assert.match(app, /studentLearningGapDocumentBody\(assessment,result\)/);
+  assert.match(app, /studyGuideDocumentBody\(guide\.guide,guide\.evidenceFiles/);
   assert.doesNotMatch(app, /Missing_Files\.txt/);
   assert.match(app, /worksheetDocumentBody\(worksheet\.content\),false/);
   assert.match(app, /answerKeyDocumentBody\(worksheet\.content\),false/);
-  assert.match(app, /studyGuideDocumentBody\(guide\.guide\)/);
+  assert.match(app, /studyGuideDocumentBody\(guide\.guide,guide\.evidenceFiles/);
   assert.match(app, /String\.fromCharCode\(\.\.\.bytes\.slice\(0,5\)\)!=="%PDF-"/);
 });
 
