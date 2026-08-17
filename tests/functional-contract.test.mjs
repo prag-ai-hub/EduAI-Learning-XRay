@@ -141,6 +141,22 @@ test("teacher can generate all reports while the next student's OCR starts", () 
   assert.match(app, /open\(nextFileId\?/);
 });
 
+test("multi-student grading remounts OCR state for each answer sheet", () => {
+  assert.match(app, /<PerFileGradeDialog key=\{id\}/);
+  assert.match(app, /advanceBulkAnalysisQueue\(assessment\.id,file\.id\)/);
+});
+
+test("learning gap view restores the executive summary", () => {
+  assert.match(app, /Student performance and priority learning gaps/);
+  assert.match(app, /Overall performance/);
+  assert.match(app, /Learning-gap summary/);
+});
+
+test("reports name the former heatmap Performance matrix report", () => {
+  assert.match(app, /Performance matrix report/);
+  assert.doesNotMatch(app, /<option>Class heatmap<\/option>/);
+});
+
 test("principal dashboard provides four-band class and subject drill-down", () => {
   for (const label of ["90% and above", "75–89%", "55–74%", "Below 55%", "School performance matrix", "Class drill-down"]) assert.ok(app.includes(label));
   assert.match(app, /score>=90\?"green":score>=75\?"yellow":score>=55\?"orange":"red"/);
