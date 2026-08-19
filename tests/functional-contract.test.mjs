@@ -274,6 +274,15 @@ test("teacher authentication and first-login onboarding are complete", () => {
   assert.match(app, /assessments:\[\]/);
 });
 
+test("legacy Supabase schemas do not crash authentication or credit display", () => {
+  const authorization = readFileSync(new URL("../lib/authorization.ts", import.meta.url), "utf8");
+  const credits = readFileSync(new URL("../app/api/credits/route.ts", import.meta.url), "utf8");
+  assert.match(authorization, /legacyCreditSchema/);
+  assert.match(authorization, /total_credits:0,used_credits:0/);
+  assert.match(credits, /creditLedgerAvailable:!migrationPending/);
+  assert.match(credits, /PGRST205/);
+});
+
 test("analysis derives totals from the compulsory question paper and uses both reference answers", () => {
   const grade = readFileSync(new URL("../app/api/grade/route.ts", import.meta.url), "utf8");
   assert.match(grade, /Determine maxMarks dynamically/);

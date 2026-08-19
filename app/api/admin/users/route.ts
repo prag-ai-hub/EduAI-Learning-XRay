@@ -4,12 +4,18 @@ import { getSupabaseServer } from "../../../../lib/supabase-server";
 export async function GET(request:Request){
   const profile=await getAuthorizedProfile(request);const denied=requireAdmin(profile);if(denied)return denied;
   const db=getSupabaseServer();
-  const [{data:users,error},{data:transactions}]=await Promise.all([
+  let [{data:users,error},{data:transactions,error:transactionError}]=await Promise.all([
     db.from("users").select("id,name,email,role,status,total_credits,used_credits,disabled_at,updated_at").order("name"),
     db.from("credit_transactions").select("id,user_id,amount,transaction_type,reference,reason,admin_user_id,created_at").order("created_at",{ascending:false}).limit(200)
   ]);
+  if(error&&(/total_credits|used_credits|disabled_at|column .* does not exist/i.test(error.message||"")||error.code==="42703")){
+    const legacy=await db.from("users").select("id,name,email,role,status,updated_at").order("name");
+    users=(legacy.data||[]).map(user=>({...user,total_credits:0,used_credits:0,disabled_at:null}));error=legacy.error;
+  }
   if(error)return Response.json({error:error.message},{status:500});
-  return Response.json({users:(users||[]).map(user=>({...user,remaining_credits:Math.max(0,user.total_credits-user.used_credits)})),transactions:transactions||[]});
+  const ledgerMissing=Boolean(transactionError&&(/credit_transactions|relation .* does not exist|schema cache/i.test(transactionError.message||"")||transactionError.code==="42P01"||transactionError.code==="PGRST205"));
+  if(transactionError&&!ledgerMissing)return Response.json({error:transactionError.message},{status:500});
+  return Response.json({users:(users||[]).map(user=>({...user,remaining_credits:Math.max(0,Number(user.total_credits||0)-Number(user.used_credits||0))})),transactions:transactions||[],creditLedgerAvailable:!ledgerMissing});
 }
 
 export async function PATCH(request:Request){
