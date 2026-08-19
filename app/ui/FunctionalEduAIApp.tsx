@@ -12,7 +12,8 @@ type TeacherModule = "Home" | "Work" | "Review" | "X-Ray" | "Interventions" | "S
 type AdminModule = "Overview" | "Users" | "Schools & Classes" | "Students" | "Academic years" | "Branding & Privacy" | "Schools" | "Analytics" | "AI Configuration" | "Feature flags" | "System health" | "Audit" | "Reports";
 type Stage = "draft" | "uploaded" | "setup" | "grading" | "review" | "approved" | "xray" | "intervention" | "followup" | "published";
 type Gap = {concept:string; mastery:number;finding?:string;misconception?:string;evidence?:string;prerequisiteConcept?:string;foundationGap?:string;recommendedLevel?:string;remediationSequence?:string[];rework?:string;severity?:"priority"|"developing"|"secure"};
-type GradeResult = {fileId:string; studentName:string; questionPaperFileId?:string; questionPaperName?:string; score:number; maxMarks:number; gaps:Gap[]; date:string; feedback?:string; ocrText?:string;evidenceFingerprint?:string;reanalysisReason?:string};
+type EvaluatorQuestion = {id:string;label:string;attemptState:"attempted"|"not_attempted"|"excluded";awardedMarks:number;maxMarks:number;allowedIncrement:number;evidence:string;rationale:string;confidence:number;aiDisposition:"accepted"|"edited"|"rejected";reviewed:boolean;criteria?:{id:string;label:string;awardedMarks:number;maxMarks:number;evidence?:string;rationale?:string}[]};
+type GradeResult = {fileId:string; studentName:string; questionPaperFileId?:string; questionPaperName?:string; score:number; maxMarks:number; gaps:Gap[]; date:string; feedback?:string; ocrText?:string;evidenceFingerprint?:string;reanalysisReason?:string;evaluationVersionId?:string;evaluationVersion?:number;evaluationStatus?:"submitted"|"moderation_pending"|"finalized"|"published";questionDecisions?:EvaluatorQuestion[]};
 type Assessment = {
   id:string; title:string; type:string; grade:string; section:string; subject:string;
   maxMarks:number; date:string; stage:Stage; files:UploadFile[]; questions:number;
@@ -883,9 +884,12 @@ function PerFileGradeDialog({assessment,file,state,setState,update,open,notify}:
   const alreadyGraded=Boolean(assessment.gradeResults?.[file.id]);
   const [reanalysisReason,setReanalysisReason]=useState("");
   const [gradeError,setGradeError]=useState("");
+  const [pendingAnalysis,setPendingAnalysis]=useState<{result:GradeResult;questions:EvaluatorQuestion[]}|null>(null);
+  const [evaluationErrors,setEvaluationErrors]=useState<string[]>([]);
   const resetReferenceOcr=()=>{setOcrDocuments(null);setProgress(0);setGradeError("")};
   const changeQuestionPaper=(id:string)=>{setQpId(id);resetReferenceOcr()};
   const grade=async()=>{
+    if(pendingAnalysis){await submitEvaluation();return}
     if(!studentName.trim()){notify("Enter the student's name before grading.","warning");return}
     if(!qpId){notify("A question paper is compulsory before learning-gap analysis can start.","warning");return}
     if(!analysisSubject.trim()||!analysisGrade.trim()){notify("Subject and Class are required before generating learning gaps.","warning");return}
@@ -961,22 +965,12 @@ function PerFileGradeDialog({assessment,file,state,setState,update,open,notify}:
       clearInterval(timer);setProgress(100);
       const gaps:Gap[]=(payload.gaps||[]).map((g:any)=>({concept:String(g.concept),mastery:Math.max(0,Math.min(100,Math.round(Number(g.mastery)))),finding:String(g.finding||""),misconception:String(g.misconception||""),evidence:String(g.evidence||""),prerequisiteConcept:String(g.prerequisiteConcept||""),foundationGap:String(g.foundationGap||""),recommendedLevel:String(g.recommendedLevel||""),remediationSequence:Array.isArray(g.remediationSequence)?g.remediationSequence.map(String):[],rework:String(g.rework||""),severity:["priority","developing","secure"].includes(g.severity)?g.severity:undefined})).sort((a:Gap,b:Gap)=>a.mastery-b.mastery);
       const detectedMaxMarks=Math.max(1,Math.round(Number(payload.maxMarks)||assessment.maxMarks));
-      const score=Math.max(0,Math.min(detectedMaxMarks,Math.round(Number(payload.score))));
-      const result:GradeResult={fileId:file.id,studentName:studentName.trim(),questionPaperFileId:qpId||undefined,questionPaperName:qp?.name,score,maxMarks:detectedMaxMarks,gaps,date:new Date().toISOString(),feedback:typeof payload.feedback==="string"?payload.feedback:undefined,ocrText:ocrDocuments.answerSheet?.text,evidenceFingerprint,reanalysisReason:alreadyGraded?reanalysisReason.trim():undefined};
-      update(assessment.id,{
-        grade:selectedMapping?.grade||assessment.grade,
-        section:selectedMapping?.section||assessment.section,
-        subject:analysisSubject,
-        maxMarks:detectedMaxMarks,
-        gradeResults:{...(assessment.gradeResults||{}),[file.id]:result},
-        gradedFileIds:Array.from(new Set([...(assessment.gradedFileIds||[]),file.id])),
-        lastGradedFileId:file.id,
-        stage:["draft","uploaded","setup"].includes(assessment.stage)?"review":assessment.stage
-      });
-      notify(`${result.studentName}'s analysis is complete. Reports are generating in the background.`);
-      void generateAllStudentResources({...assessment,subject:analysisSubject,grade:selectedMapping?.grade||assessment.grade},result,setState).then(()=>notify(`All reports are ready for ${result.studentName} in Resources.`)).catch(error=>notify(error instanceof Error?error.message:"Background report generation failed","error"));
-      const nextFileId=advanceBulkAnalysisQueue(assessment.id,file.id);
-      window.setTimeout(()=>open(nextFileId?`grade-file:${nextFileId}`:`student-gaps:${file.id}`),250);
+      const questions:EvaluatorQuestion[]=(payload.questions||[]).map((question:any)=>({...question,reviewed:false,aiDisposition:"accepted"}));
+      const score=questions.reduce((sum,question)=>sum+Number(question.awardedMarks||0),0);
+      const result:GradeResult={fileId:file.id,studentName:studentName.trim(),questionPaperFileId:qpId||undefined,questionPaperName:qp?.name,score,maxMarks:detectedMaxMarks,gaps,date:new Date().toISOString(),feedback:typeof payload.feedback==="string"?payload.feedback:undefined,ocrText:ocrDocuments.answerSheet?.text,evidenceFingerprint,reanalysisReason:alreadyGraded?reanalysisReason.trim():undefined,questionDecisions:questions};
+      setPendingAnalysis({result,questions});
+      setEvaluationErrors([]);
+      notify("AI proposal ready. Review every question before submitting the evaluation.","warning");
     }catch(err){
       clearInterval(timer);
       const message=err instanceof Error?err.message:"Grading failed";
@@ -985,6 +979,27 @@ function PerFileGradeDialog({assessment,file,state,setState,update,open,notify}:
     }finally{
       setRunning(false);
     }
+  };
+  const updateQuestion=(id:string,patch:Partial<EvaluatorQuestion>)=>setPendingAnalysis(current=>current?{...current,questions:current.questions.map(question=>question.id===id?{...question,...patch,aiDisposition:Object.prototype.hasOwnProperty.call(patch,"awardedMarks")||Object.prototype.hasOwnProperty.call(patch,"attemptState")?"edited":question.aiDisposition}:question)}:current);
+  const submitEvaluation=async()=>{
+    if(!pendingAnalysis)return;
+    setRunning(true);setEvaluationErrors([]);setGradeError("");
+    try{
+      const questions=pendingAnalysis.questions.map(question=>({...question,awardedMarks:Number(question.awardedMarks),maxMarks:Number(question.maxMarks)}));
+      const response=await authFetch("/api/evaluations/submit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        assessmentId:assessment.id,fileId:file.id,studentName:pendingAnalysis.result.studentName,assessmentVersion:assessment.version||1,questionPaperFileId:qpId||undefined,
+        questions,pages:[{pageNumber:1,disposition:"contains_reviewed_answer"}],expectedMaxMarks:pendingAnalysis.result.maxMarks,evaluatorConfirmation:true,
+        idempotencyKey:`evaluation:${assessment.id}:${file.id}:${Math.abs((pendingAnalysis.result.evidenceFingerprint||"").split("").reduce((hash,char)=>((hash<<5)-hash+char.charCodeAt(0))|0,0))}`
+      })});
+      const payload=await response.json();
+      if(!response.ok){setEvaluationErrors(Array.isArray(payload.errors)?payload.errors:[]);throw new Error(payload.error||"Evaluation submission failed");}
+      const score=Number(payload.evaluation.total_awarded);
+      const result:GradeResult={...pendingAnalysis.result,score,questionDecisions:questions,evaluationVersionId:payload.evaluation.id,evaluationVersion:Number(payload.evaluation.version_number),evaluationStatus:payload.evaluation.status};
+      update(assessment.id,{grade:selectedMapping?.grade||assessment.grade,section:selectedMapping?.section||assessment.section,subject:analysisSubject,maxMarks:result.maxMarks,gradeResults:{...(assessment.gradeResults||{}),[file.id]:result},gradedFileIds:Array.from(new Set([...(assessment.gradedFileIds||[]),file.id])),lastGradedFileId:file.id,stage:["draft","uploaded","setup"].includes(assessment.stage)?"review":assessment.stage});
+      notify(`${result.studentName}'s immutable evaluation v${result.evaluationVersion} was submitted. Reports are generating in the background.`);
+      void generateAllStudentResources({...assessment,subject:analysisSubject,grade:selectedMapping?.grade||assessment.grade},result,setState).then(()=>notify(`All reports are ready for ${result.studentName} in Resources.`)).catch(error=>notify(error instanceof Error?error.message:"Background report generation failed","error"));
+      const nextFileId=advanceBulkAnalysisQueue(assessment.id,file.id);window.setTimeout(()=>open(nextFileId?`grade-file:${nextFileId}`:`student-gaps:${file.id}`),250);
+    }catch(error){const message=error instanceof Error?error.message:"Evaluation submission failed";setGradeError(message);notify(message,"error")}finally{setRunning(false)}
   };
   const autoOcrStarted=useRef(false);
   useEffect(()=>{if(autoOcrStarted.current||ocrDocuments||running||alreadyGraded||!bulkAnalysisQueue(assessment.id).includes(file.id))return;autoOcrStarted.current=true;void grade()},[file.id]);
@@ -1009,6 +1024,7 @@ function PerFileGradeDialog({assessment,file,state,setState,update,open,notify}:
     {!questionPapers.length&&<p className="form-error">This legacy assessment has no question paper. Edit or recreate the assessment with the compulsory question paper before analysis.</p>}
     {ocrDocuments&&<section className="ocr-validation"><header><div><p className="eyebrow">OCR validation</p><h3>Check the extracted text</h3></div><span className="status warning">Teacher validation required</span></header><p>Correct names, question numbers, marks, formulas or unreadable words before continuing.</p><label><b>Student answer sheet · {ocrDocuments.answerSheet?.name}</b><textarea value={ocrDocuments.answerSheet?.text||""} onChange={e=>updateOcr("answerSheet",e.target.value)} rows={12}/></label>{ocrDocuments.questionPaper&&<label><b>Question paper · {ocrDocuments.questionPaper.name}</b><textarea value={ocrDocuments.questionPaper.text} onChange={e=>updateOcr("questionPaper",e.target.value)} rows={8}/></label>}{ocrDocuments.markingScheme&&<label><b>Marking scheme · {ocrDocuments.markingScheme.name}</b><textarea value={ocrDocuments.markingScheme.text} onChange={e=>updateOcr("markingScheme",e.target.value)} rows={8}/></label>}{ocrDocuments.modelAnswer&&<label><b>Model answer paper · {ocrDocuments.modelAnswer.name}</b><textarea value={ocrDocuments.modelAnswer.text} onChange={e=>updateOcr("modelAnswer",e.target.value)} rows={8}/></label>}</section>}
     {progress>0&&<><Progress value={progress}/><p className="modal-copy">{running?(ocrDocuments?`Diagnostic analysis: ${progress}%`:`Mistral OCR: ${progress}%`):ocrDocuments?"OCR complete · awaiting teacher validation":"Ready"}</p></>}
+    {pendingAnalysis&&<section className="evaluator-workspace" aria-labelledby="evaluator-workspace-title"><header><div><p className="eyebrow">Evaluator workspace</p><h3 id="evaluator-workspace-title">Review every question before submission</h3></div><span className="status warning">{pendingAnalysis.questions.filter(question=>question.reviewed).length}/{pendingAnalysis.questions.length} reviewed</span></header><p>AI marks are proposals. Confirm the attempt state, award, evidence, and rationale. Submitted evaluations are locked; later corrections create a new version.</p><div className="evaluator-question-list">{pendingAnalysis.questions.map(question=><article key={question.id} className={question.reviewed?"reviewed":""}><div className="evaluator-question-head"><div><b>{question.label}</b><small>{Math.round(question.confidence*100)}% AI confidence</small></div><label className="check"><input type="checkbox" checked={question.reviewed} onChange={event=>updateQuestion(question.id,{reviewed:event.target.checked})}/> Reviewed</label></div><div className="form-grid"><Field label="Attempt state"><select value={question.attemptState} onChange={event=>updateQuestion(question.id,{attemptState:event.target.value as EvaluatorQuestion["attemptState"],awardedMarks:event.target.value==="attempted"?question.awardedMarks:0})}><option value="attempted">Attempted</option><option value="not_attempted">Not attempted</option><option value="excluded">Excluded by choice rule</option></select></Field><Field label={`Marks (maximum ${question.maxMarks})`}><input type="number" min="0" max={question.maxMarks} step={question.allowedIncrement||0.5} value={question.awardedMarks} onChange={event=>updateQuestion(question.id,{awardedMarks:Number(event.target.value)})}/></Field></div><Field label="Evidence from the answer"><textarea rows={3} value={question.evidence} onChange={event=>updateQuestion(question.id,{evidence:event.target.value})}/></Field><Field label="Evaluator rationale"><textarea rows={2} value={question.rationale} onChange={event=>updateQuestion(question.id,{rationale:event.target.value})}/></Field></article>)}</div><div className="evaluation-total"><b>Server-checked total on submission</b><strong>{pendingAnalysis.questions.reduce((sum,question)=>sum+Number(question.awardedMarks||0),0)} / {pendingAnalysis.result.maxMarks}</strong></div>{evaluationErrors.length>0&&<div className="validation-summary" role="alert"><b>Resolve these items before submission:</b><ul>{evaluationErrors.map(error=><li key={error}>{error}</li>)}</ul></div>}</section>}
     {gradeError&&<p className="form-error" role="alert">{gradeError}</p>}
     <button className="primary full" disabled={running} onClick={grade}>{running?(ocrDocuments?"Generating reports in the background…":"Extracting text with Mistral…"):ocrDocuments?"Generate All Reports":"Extract OCR text with Mistral"}</button>
   </>
