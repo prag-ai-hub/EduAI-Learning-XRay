@@ -303,6 +303,30 @@ test("answer-sheet classification controls grading versus direct diagnosis", () 
   assert.match(app, /const alreadyGraded=Boolean\(assessment\.gradeResults\?\.\[file\.id\]&&!assessment\.gradeResults\[file\.id\]\.gradingSkipped\)/);
 });
 
+test("review tab is a continuous five-stage question workspace", () => {
+  for (const capability of ["PAGE {pageIndex+1} OF {pageNumbers.length}", "END OF PAGE", "1. Question", "2. Student Handwritten Answer", "3. OCR (Extracted Text)", "4. Marking Done by AI", "5. Edit Marks & Comments — Teacher"]) {
+    assert.ok(app.includes(capability), `missing continuous review capability: ${capability}`);
+  }
+  assert.match(app, /continuous-review-workspace/);
+  assert.match(app, /Original handwritten answer/);
+  assert.match(app, /object data=\{`\$\{sourceUrl\}#page=\$\{pageNumber\}`\}/);
+  assert.doesNotMatch(app, /Next Page/);
+});
+
+test("review tab preserves student and question jump navigation", () => {
+  for (const capability of ["← Previous Student", "Current student", "Next Student →", "question-navigator", "scrollIntoView", "Reviewed", "Pending", "Not Answered"]) assert.ok(app.includes(capability), `missing review navigation capability: ${capability}`);
+  assert.match(app, /disabled=\{studentIndex===0\}/);
+  assert.match(app, /disabled=\{studentIndex===results\.length-1\}/);
+});
+
+test("teacher question edits autosave into the existing grade result", () => {
+  for (const capability of ["AI Awarded Marks", "Teacher Edited Marks", "Teacher Comments (Optional)", "✓ Auto-saved", "Submit Review", "Overall Summary"]) assert.ok(app.includes(capability), `missing teacher review behavior: ${capability}`);
+  assert.match(app, /gradeResults:\{\.\.\.\(assessment\.gradeResults\|\|\{\}\),\[current\.fileId\]/);
+  assert.match(app, /score=questionDecisions\.filter/);
+  assert.match(app, /teacherComment/);
+  assert.match(app, /aiAwardedMarks/);
+});
+
 test("analysis derives totals from the compulsory question paper and uses both reference answers", () => {
   const grade = readFileSync(new URL("../app/api/grade/route.ts", import.meta.url), "utf8");
   assert.match(grade, /Determine maxMarks dynamically/);
