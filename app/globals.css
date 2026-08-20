@@ -17,6 +17,15 @@
 @media(max-width:1050px){.review-top-actions{grid-template-columns:1fr}.review-top-actions>.link,.review-top-actions>.button-row{justify-self:stretch}.review-top-actions>.button-row{justify-content:flex-end}.review-summary-compact{width:100%;grid-template-columns:82px 1fr}.review-student-details{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:760px){.review-top-actions .review-student-bar{grid-template-columns:1fr 1fr}.review-top-actions .review-student-bar>div{grid-column:1/-1}.review-student-details{grid-template-columns:1fr 1fr}.continuous-review-workspace{padding-left:0}.review-question-card:before{display:none}.review-summary-compact{grid-template-columns:70px 1fr}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+
+/* Keep the review summary in the right rail without reserving an empty row over the paper. */
+@media(min-width:1051px){.review-summary-compact{position:relative;z-index:2;margin-bottom:-148px}.question-navigator{margin-top:162px}}
+
+/* Long question labels must remain readable and cannot overlap adjacent rows. */
+.question-navigator button{grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;min-height:54px;overflow:hidden;align-items:center}
+.question-navigator button span{grid-column:1;grid-row:1;width:auto;height:auto;border:0;border-radius:0;display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.35}
+.question-navigator button small{grid-column:1;grid-row:2;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.question-navigator button em{grid-column:2;grid-row:1/3;white-space:nowrap;align-self:center}
 .file-input{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none}.dropzone[role="button"]{cursor:pointer}.dropzone[role="button"]:focus-visible{outline:3px solid color-mix(in srgb,var(--navy) 35%,transparent);outline-offset:3px}.dropzone small{max-width:90%;text-align:center;overflow-wrap:anywhere}
 
 /* Functional demo workflows */
