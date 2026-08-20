@@ -333,6 +333,14 @@ test("review tab matches the approved reference hierarchy", () => {
   assert.match(app, /Download<\/button><button className="primary"/);
 });
 
+test("Review tab is the single approval and resource-generation workflow", () => {
+  for (const capability of ["Submit Review & Generate Resource", "Bulk Approval & Generate Resource", "Resources are generating in the background", "Bulk approval started"]) assert.ok(app.includes(capability), `missing review approval workflow: ${capability}`);
+  assert.match(app, /generateAllStudentResources\(assessment,finalResult,setState\)/);
+  assert.match(app, /approved\.forEach\(result=>void generateAllStudentResources/);
+  assert.match(app, /AI grading is ready in the Review tab/);
+  assert.match(app, /openAssessment\?\.\(assessment\.id,"Review"\)/);
+});
+
 test("analysis derives totals from the compulsory question paper and uses both reference answers", () => {
   const grade = readFileSync(new URL("../app/api/grade/route.ts", import.meta.url), "utf8");
   assert.match(grade, /Determine maxMarks dynamically/);
