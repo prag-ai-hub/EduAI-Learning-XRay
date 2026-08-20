@@ -96,8 +96,8 @@ test("grading stays bound to the selected uploaded assessment", () => {
   assert.match(app, /a\.files\.find/);
 });
 
-test("teacher explicitly chooses grading or learning-gap analysis", () => {
-  for (const capability of ["Grade answer sheet", "View learning gaps", "Select answer sheet for analysis", "Continue with this answer sheet", "Question paper", "Answer sheet", "gradedFileIds"]) {
+test("answer-sheet role explicitly chooses grading or learning-gap analysis", () => {
+  for (const capability of ["Grade answer sheet", "View learning gaps", "Select answer sheet for analysis", "Continue to grading & teacher review", "Read teacher marks & diagnose learning gaps", "Question paper", "Answer sheet", "gradedFileIds"]) {
     assert.ok(app.includes(capability), `missing explicit grading choice: ${capability}`);
   }
   assert.match(app, /assessmentHasGrades/);
@@ -131,7 +131,7 @@ test("multi-file evidence is appended safely and analysis mapping is explicitly 
 test("multi-student analysis resumes when background generation starts", () => {
   assert.match(app, /saveBulkAnalysisQueue\(assessment\.id,pending\.map/);
   assert.match(app, /advanceBulkAnalysisQueue\(assessment\.id,file\.id\)/);
-  assert.match(app, /open\(nextFileId\?/);
+  assert.match(app, /analysisDialogFor\(nextFile\)/);
 });
 
 test("teacher can generate all reports while the next student's OCR starts", () => {
@@ -139,7 +139,7 @@ test("teacher can generate all reports while the next student's OCR starts", () 
   assert.match(app, /generateAllStudentResources/);
   assert.match(app, /Reports are generating in the background/);
   assert.match(app, /bulkAnalysisQueue\(assessment\.id\)\.includes\(file\.id\)/);
-  assert.match(app, /open\(nextFileId\?/);
+  assert.match(app, /analysisDialogFor\(nextFile\)/);
 });
 
 test("multi-student grading remounts OCR state for each answer sheet", () => {
@@ -291,10 +291,14 @@ test("assessment deletion is confirmed and cascades only assessment-owned state"
   assert.match(app, /authFetch\(`\/api\/files\/\$\{encodeURIComponent\(file\.id\)\}`/);
 });
 
-test("teacher may skip grading and enter the existing learning-gap diagnosis", () => {
-  assert.match(app, /Skip Grading & Diagnose Learning Gaps/);
-  assert.match(app, /diagnose-file:/);
+test("answer-sheet classification controls grading versus direct diagnosis", () => {
+  assert.match(app, /function analysisDialogFor\(file:UploadFile\)/);
+  assert.match(app, /Teacher-graded answer sheet.*diagnose-file.*grade-file/);
+  assert.match(app, /Read teacher marks & diagnose learning gaps/);
+  assert.match(app, /Continue to grading & teacher review/);
   assert.match(app, /gradingSkipped:diagnosisOnly\|\|undefined/);
+  assert.match(app, /teacher-awarded marks were analysed/);
+  assert.match(app, /generateAllStudentResources\(\{\.\.\.assessment,subject:analysisSubject/);
   assert.match(app, /openAssessment\?\.\(assessment\.id,"X-Ray"\)/);
   assert.match(app, /const alreadyGraded=Boolean\(assessment\.gradeResults\?\.\[file\.id\]&&!assessment\.gradeResults\[file\.id\]\.gradingSkipped\)/);
 });
