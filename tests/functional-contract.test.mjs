@@ -328,9 +328,16 @@ test("teacher question edits autosave into the existing grade result", () => {
 });
 
 test("review tab matches the approved reference hierarchy", () => {
-  for (const capability of ["review-top-actions", "review-student-details", "review-summary-compact", "review-score-ring", "Back to Submissions", "Submitted On", "Overall Summary"]) assert.ok(app.includes(capability), `missing approved review layout: ${capability}`);
+  for (const capability of ["review-top-actions", "review-student-details", "review-summary-compact", "review-score-ring", "Back to Submissions", "Submitted On", "Overall Summary", "Create Corrected Answer Sheet"]) assert.ok(app.includes(capability), `missing approved review layout: ${capability}`);
   assert.match(app, /Student Name<\/small><b>\{current\.studentName\}/);
-  assert.match(app, /Download<\/button><button className="primary"/);
+  assert.match(app, /Create Corrected Answer Sheet/);
+});
+
+test("review exports a student-facing corrected answer sheet with the source page and feedback per question", () => {
+  for (const capability of ["downloadCorrectedAnswerSheet", "sourcePageScreenshot", "Source answer-sheet page", "Final marks:", "AI feedback", "Teacher comment"]) assert.ok(app.includes(capability), `missing corrected-answer-sheet export capability: ${capability}`);
+  assert.match(app, /question\.pageNumber/);
+  assert.match(app, /pdf\.addImage\(screenshot/);
+  assert.match(app, /verifiedPdfBytes\(pdf\.output\("blob"\)\)/);
 });
 
 test("Review tab is the single approval and resource-generation workflow", () => {
