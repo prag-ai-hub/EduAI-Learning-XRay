@@ -55,10 +55,10 @@ test("accepted AI award is not blocked by an inconsistent optional criterion bre
   assert.equal(result.valid, true);
 });
 
-test("teacher-edited awards still require criterion totals to match", () => {
+test("teacher-edited question awards are not blocked by non-editable criterion metadata", () => {
   const input = valid();
   input.questions[0].criteria = [{ id: "q1.c1", label: "Method", awardedMarks: 1, maxMarks: 2 }];
   const result = validateEvaluationSubmission(input);
-  assert.equal(result.valid, false);
-  assert.ok(result.errors.some(error => error.includes("criterion marks must equal")));
+  assert.equal(result.valid, true);
+  assert.ok(!result.errors.some(error => error.includes("criterion marks must equal")));
 });

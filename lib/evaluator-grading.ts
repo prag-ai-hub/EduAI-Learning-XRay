@@ -121,7 +121,9 @@ export function validateEvaluationSubmission(submission: EvaluationSubmission): 
       // breakdown must not block an unchanged accepted question award. Once an
       // evaluator edits or rejects the proposal, the edited breakdown is
       // validated strictly against the teacher-approved question total.
-      if (question.aiDisposition !== "accepted" && Math.abs(criterionAward - question.awardedMarks) > 1e-8) errors.push(`${prefix}: criterion marks must equal the question award.`);
+      // Criterion rows are explanatory AI metadata and are not editable in the
+      // evaluator UI. The authoritative, teacher-editable question award is
+      // validated above; an internal criterion mismatch must never block it.
     }
     totalAwarded += Number(question.awardedMarks || 0);
     totalMaximum += Number(question.maxMarks || 0);
