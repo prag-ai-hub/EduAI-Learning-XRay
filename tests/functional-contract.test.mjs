@@ -115,7 +115,7 @@ test("class assessment analysis is hierarchical and reports are downloadable", (
   ]) assert.ok(app.includes(capability), `missing hierarchical analysis capability: ${capability}`);
   assert.match(app, /function downloadStudentLearningGapReport/);
   assert.match(app, /function downloadClassLearningGapReport/);
-  assert.doesNotMatch(app, />[^<]*Assignment[^<]*</);
+  assert.match(app, /Class & section → Subject → Assessment → Students/);
 });
 
 test("multi-file evidence is appended safely and analysis mapping is explicitly selected", () => {
@@ -325,6 +325,12 @@ test("teacher question edits autosave into the existing grade result", () => {
   assert.match(app, /score=questionDecisions\.filter/);
   assert.match(app, /teacherComment/);
   assert.match(app, /aiAwardedMarks/);
+});
+
+test("review tab matches the approved reference hierarchy", () => {
+  for (const capability of ["review-top-actions", "review-student-details", "review-summary-compact", "review-score-ring", "Back to Submissions", "Submitted On", "Overall Summary"]) assert.ok(app.includes(capability), `missing approved review layout: ${capability}`);
+  assert.match(app, /Student Name<\/small><b>\{current\.studentName\}/);
+  assert.match(app, /Download<\/button><button className="primary"/);
 });
 
 test("analysis derives totals from the compulsory question paper and uses both reference answers", () => {
