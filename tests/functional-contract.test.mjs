@@ -283,6 +283,22 @@ test("legacy Supabase schemas do not crash authentication or credit display", ()
   assert.match(credits, /PGRST205/);
 });
 
+test("assessment deletion is confirmed and cascades only assessment-owned state", () => {
+  for (const capability of ["Delete Assessment", "Confirm Delete Assessment", "This action cannot be undone", "Assessment and all associated resources deleted"]) assert.ok(app.includes(capability));
+  assert.match(app, /assessments:current\.assessments\.filter\(item=>item\.id!==assessment\.id\)/);
+  assert.match(app, /resources:current\.resources\.filter\(item=>item\.assessmentId!==assessment\.id\)/);
+  assert.match(app, /interventions:current\.interventions\.filter\(item=>item\.assessmentId!==assessment\.id\)/);
+  assert.match(app, /authFetch\(`\/api\/files\/\$\{encodeURIComponent\(file\.id\)\}`/);
+});
+
+test("teacher may skip grading and enter the existing learning-gap diagnosis", () => {
+  assert.match(app, /Skip Grading & Diagnose Learning Gaps/);
+  assert.match(app, /diagnose-file:/);
+  assert.match(app, /gradingSkipped:diagnosisOnly\|\|undefined/);
+  assert.match(app, /openAssessment\?\.\(assessment\.id,"X-Ray"\)/);
+  assert.match(app, /const alreadyGraded=Boolean\(assessment\.gradeResults\?\.\[file\.id\]&&!assessment\.gradeResults\[file\.id\]\.gradingSkipped\)/);
+});
+
 test("analysis derives totals from the compulsory question paper and uses both reference answers", () => {
   const grade = readFileSync(new URL("../app/api/grade/route.ts", import.meta.url), "utf8");
   assert.match(grade, /Determine maxMarks dynamically/);

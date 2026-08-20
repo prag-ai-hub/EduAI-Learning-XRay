@@ -13,7 +13,7 @@ type AdminModule = "Overview" | "Users" | "Schools & Classes" | "Students" | "Ac
 type Stage = "draft" | "uploaded" | "setup" | "grading" | "review" | "approved" | "xray" | "intervention" | "followup" | "published";
 type Gap = {concept:string; mastery:number;finding?:string;misconception?:string;evidence?:string;prerequisiteConcept?:string;foundationGap?:string;recommendedLevel?:string;remediationSequence?:string[];rework?:string;severity?:"priority"|"developing"|"secure"};
 type EvaluatorQuestion = {id:string;label:string;attemptState:"attempted"|"not_attempted"|"excluded";awardedMarks:number;maxMarks:number;allowedIncrement:number;evidence:string;rationale:string;confidence:number;aiDisposition:"accepted"|"edited"|"rejected";reviewed:boolean;criteria?:{id:string;label:string;awardedMarks:number;maxMarks:number;evidence?:string;rationale?:string}[]};
-type GradeResult = {fileId:string; studentName:string; questionPaperFileId?:string; questionPaperName?:string; score:number; maxMarks:number; gaps:Gap[]; date:string; feedback?:string; ocrText?:string;evidenceFingerprint?:string;reanalysisReason?:string;evaluationVersionId?:string;evaluationVersion?:number;evaluationStatus?:"submitted"|"moderation_pending"|"finalized"|"published";questionDecisions?:EvaluatorQuestion[]};
+type GradeResult = {fileId:string; studentName:string; questionPaperFileId?:string; questionPaperName?:string; score:number; maxMarks:number; gaps:Gap[]; date:string; feedback?:string; ocrText?:string;evidenceFingerprint?:string;reanalysisReason?:string;evaluationVersionId?:string;evaluationVersion?:number;evaluationStatus?:"submitted"|"moderation_pending"|"finalized"|"published";questionDecisions?:EvaluatorQuestion[];gradingSkipped?:boolean};
 type Assessment = {
   id:string; title:string; type:string; grade:string; section:string; subject:string;
   maxMarks:number; date:string; stage:Stage; files:UploadFile[]; questions:number;
@@ -379,9 +379,9 @@ function Work({state,setState,selected,openAssessment,open,update,notify}:any){
 }
 
 function AssessmentDecision({assessment:a,open,openAssessment}:any){
-  const graded=assessmentHasGrades(a);
-  const learningGaps=()=>graded?openAssessment(a.id,"X-Ray"):open("grade-picker");
-  return <section className="card span-2 decision-card"><div><p className="eyebrow">Choose an action</p><h2>{graded?"Graded evidence is ready":"Select an answer sheet to begin"}</h2><p>{graded?"Grade another uploaded sheet or open the visual learning-gap analysis from approved evidence.":"Choose the exact uploaded answer sheet for grading. Learning gaps become available after grading."}</p></div><div className="button-row"><button className="primary" onClick={()=>a.files.length?open("grade-picker"):open("upload")}>Analyse Assessment</button><button className="secondary" onClick={()=>open("bulk-analysis")}>Check Multiple Students</button><button className="secondary" onClick={learningGaps}>View learning gaps</button></div></section>
+  const results=Object.values(a.gradeResults||{}) as GradeResult[],graded=results.some(result=>!result.gradingSkipped),diagnosed=results.length>0;
+  const learningGaps=()=>diagnosed?openAssessment(a.id,"X-Ray"):open("grade-picker");
+  return <section className="card span-2 decision-card"><div><p className="eyebrow">Choose an action</p><h2>{graded?"Graded evidence is ready":diagnosed?"Learning-gap diagnosis is ready":"Select an answer sheet to begin"}</h2><p>{graded?"Grade another uploaded sheet or open the visual learning-gap analysis from approved evidence.":diagnosed?"Open the diagnosis, or use the unchanged grading workflow whenever grading is required.":"Choose grading, or skip grading and start the existing learning-gap diagnosis directly."}</p></div><div className="button-row"><button className="primary" onClick={()=>a.files.length?open("grade-picker"):open("upload")}>Analyse Assessment</button><button className="secondary" onClick={()=>open("bulk-analysis")}>Check Multiple Students</button>{!diagnosed&&<button className="secondary" onClick={()=>a.files.length?open("diagnose-picker"):open("upload")}>Skip Grading & Diagnose Learning Gaps</button>}<button className="secondary" onClick={learningGaps}>View learning gaps</button><button className="link danger" onClick={()=>open("delete-assessment")}>Delete Assessment</button></div></section>
 }
 
 function AssessmentJourney({assessment:a,open}:any){
@@ -653,8 +653,11 @@ function AppDialog({type,close,open,state,setState,selected,update,notify,resetD
     {title==="create-assessment"&&<CreateAssessment state={state} setState={setState} done={(id:string)=>{openAssessment(id,"Work");done("Assessment saved and added to Work")}}/>}
     {title==="upload"&&selected&&<UploadDialogV2 assessment={selected} update={update} done={()=>done("Evidence uploaded and classified. OCR is ready.")}/>}
     {title==="grade-picker"&&<GradeSelectionDialog assessment={selected} open={open} done={done}/>}
+    {title==="diagnose-picker"&&<DiagnosisSelectionDialog assessment={selected} open={open}/>}
     {title==="bulk-analysis"&&<BulkAnalysisWizard assessment={selected} open={open} done={done}/>}
     {title==="grade-file"&&<PerFileGradeDialog key={id} assessment={selected} file={(selected.files||[]).find((f:UploadFile)=>f.id===id)} state={state} setState={setState} update={update} open={open} notify={notify}/>}
+    {title==="diagnose-file"&&<PerFileGradeDialog key={`diagnose-${id}`} assessment={selected} file={(selected.files||[]).find((f:UploadFile)=>f.id===id)} state={state} setState={setState} update={update} open={open} notify={notify} diagnosisOnly openAssessment={openAssessment} close={close}/>}
+    {title==="delete-assessment"&&selected&&<DeleteAssessmentDialog assessment={selected} state={state} setState={setState} openAssessment={openAssessment} done={()=>done("Assessment and all associated resources deleted")}/>}
     {title==="student-gaps"&&<StudentGapsDialog assessment={selected} fileId={id} open={open}/>}
     {title==="worksheet-gap"&&<WorksheetDialog state={state} setState={setState} sourceAssessment={selected} sourceResult={selected.gradeResults?.[id]} presetConcept={selected.gradeResults?.[id]?.gaps.slice().sort((a:Gap,b:Gap)=>a.mastery-b.mastery)[0]?.concept} presetTitle={selected.gradeResults?.[id]?`${selected.gradeResults[id].gaps.slice().sort((a:Gap,b:Gap)=>a.mastery-b.mastery)[0]?.concept} Practice`:undefined} presetStudent={selected.gradeResults?.[id]?.studentName} done={()=>done("Practice worksheet and answer key ready in Resources")}/>}
     {title==="setup"&&<SetupDialog assessment={selected} update={update} done={()=>done("Questions, answer key and rubric saved")}/>}
@@ -762,6 +765,14 @@ function SetupDialog({assessment,update,done}:any){
   const [rubric,setRubric]=useState(assessment.rubric||"Method 40% · Conversion 30% · Calculation 20% · Final answer and unit 10%");
   return <form onSubmit={e=>{e.preventDefault();update(assessment.id,{questions,answerKey,rubric,stage:"setup"});done()}}><DialogHead eyebrow="Question detection" title="Review questions & rubric"/><p className="modal-copy">The simulation detected {questions} questions. Review the answer key and partial-credit rules before grading.</p><Field label="Detected questions"><input type="number" min="1" max="50" value={questions} onChange={e=>setQuestions(Number(e.target.value))}/></Field><Field label="Answer key / expected evidence"><textarea required value={answerKey} onChange={e=>setAnswerKey(e.target.value)}/></Field><div className="form-grid"><Field label="Strictness"><select><option>Balanced</option><option>Supportive</option><option>Strict</option></select></Field><Field label="Partial credit"><select><option>Allow method marks</option><option>Final answer only</option></select></Field></div><Field label="Rubric criteria"><textarea value={rubric} onChange={e=>setRubric(e.target.value)}/></Field><button className="primary full">Approve structure & rubric</button></form>}
 function GradeSelectionDialog({assessment,open,done}:any){const allFiles:UploadFile[]=assessment.files||[];const answerCandidates:UploadFile[]=allFiles.filter((f:UploadFile)=>isAnswerSheetFile(f,allFiles.length));const hasQuestionPaper=allFiles.some((f:UploadFile)=>isQuestionPaperFile(f,allFiles.length));const preferred=answerCandidates[0];const [selectedFileId,setSelectedFileId]=useState(preferred?.id||"");return <><DialogHead eyebrow={assessment.title} title="Select answer sheet for analysis"/><p className="modal-copy">Choose the student answer sheet. The assessment question paper, marking scheme, and model answer are linked automatically.</p><div className="grade-file-picker">{allFiles.map((file:UploadFile)=>{const graded=Boolean(assessment.gradeResults?.[file.id]);const answer=isAnswerSheetFile(file,allFiles.length);return <label key={file.id} className={selectedFileId===file.id?"selected":""}><input type="radio" name="grade-file" value={file.id} disabled={!answer} checked={selectedFileId===file.id} onChange={()=>setSelectedFileId(file.id)}/><span className="file-icon">{file.name.split(".").pop()?.toUpperCase()}</span><span><b>{file.name}</b><small>{answer?"Answer sheet":`${file.documentRole||inferDocumentRole(file.name)} · assessment reference`}</small></span>{graded&&<em>Already analysed</em>}</label>})}</div>{!hasQuestionPaper&&<p className="form-error">A question paper is compulsory. This assessment cannot be analysed until one is attached in assessment creation.</p>}{!answerCandidates.length&&<p className="form-error">Upload at least one student answer sheet.</p>}<button className="primary full" disabled={!selectedFileId||!hasQuestionPaper} onClick={()=>open(`grade-file:${selectedFileId}`)}>Continue with this answer sheet →</button></>}
+function DiagnosisSelectionDialog({assessment,open}:any){
+  const allFiles:UploadFile[]=assessment.files||[];
+  const answerCandidates=allFiles.filter(file=>isAnswerSheetFile(file,allFiles.length));
+  const hasQuestionPaper=allFiles.some(file=>isQuestionPaperFile(file,allFiles.length));
+  const [selectedFileId,setSelectedFileId]=useState(answerCandidates[0]?.id||"");
+  return <><DialogHead eyebrow={assessment.title} title="Select answer sheet for learning-gap diagnosis"/><p className="modal-copy">Choose an answer sheet to use the existing Learning Gap Diagnosis without completing grading.</p><div className="grade-file-picker">{allFiles.map(file=>{const answer=isAnswerSheetFile(file,allFiles.length);return <label key={file.id} className={selectedFileId===file.id?"selected":""}><input type="radio" name="diagnosis-file" value={file.id} disabled={!answer} checked={selectedFileId===file.id} onChange={()=>setSelectedFileId(file.id)}/><span className="file-icon">{file.name.split(".").pop()?.toUpperCase()}</span><span><b>{file.name}</b><small>{answer?"Answer sheet":`${file.documentRole||inferDocumentRole(file.name)} · assessment reference`}</small></span></label>})}</div>{!hasQuestionPaper&&<p className="form-error">A question paper is compulsory for the existing Learning Gap Diagnosis.</p>}{!answerCandidates.length&&<p className="form-error">Upload at least one student answer sheet.</p>}<button className="primary full" disabled={!selectedFileId||!hasQuestionPaper} onClick={()=>open(`diagnose-file:${selectedFileId}`)}>Skip Grading & Diagnose Learning Gaps →</button></>
+}
+
 const bulkQueueKey=(assessmentId:string)=>`eduai-bulk-analysis:${assessmentId}`;
 function saveBulkAnalysisQueue(assessmentId:string,fileIds:string[]){try{sessionStorage.setItem(bulkQueueKey(assessmentId),JSON.stringify(fileIds))}catch{}}
 function bulkAnalysisQueue(assessmentId:string):string[]{try{return JSON.parse(sessionStorage.getItem(bulkQueueKey(assessmentId))||"[]")}catch{return []}}
@@ -857,7 +868,7 @@ async function generateAllStudentResources(assessment:Assessment,result:GradeRes
   return {guide,worksheet};
 }
 
-function PerFileGradeDialog({assessment,file,state,setState,update,open,notify}:any){
+function PerFileGradeDialog({assessment,file,state,setState,update,open,notify,diagnosisOnly=false,openAssessment,close}:any){
   if(!file)return <><DialogHead eyebrow={assessment.title} title="Grade answer sheet"/><p className="modal-copy">This answer sheet could not be found. Close this dialog and try again.</p></>;
   const candidates:UploadFile[]=(assessment.files||[]).filter((f:UploadFile)=>f.id!==file.id);
   const questionPapers=candidates.filter(f=>f.documentRole==="Question paper"||(!f.documentRole&&/question|paper|qp/i.test(f.name)));
@@ -881,7 +892,7 @@ function PerFileGradeDialog({assessment,file,state,setState,update,open,notify}:
   const [progress,setProgress]=useState(0);
   const [running,setRunning]=useState(false);
   const [ocrDocuments,setOcrDocuments]=useState<any>(null);
-  const alreadyGraded=Boolean(assessment.gradeResults?.[file.id]);
+  const alreadyGraded=Boolean(assessment.gradeResults?.[file.id]&&!assessment.gradeResults[file.id].gradingSkipped);
   const [reanalysisReason,setReanalysisReason]=useState("");
   const [gradeError,setGradeError]=useState("");
   const [pendingAnalysis,setPendingAnalysis]=useState<{result:GradeResult;questions:EvaluatorQuestion[]}|null>(null);
@@ -898,7 +909,7 @@ function PerFileGradeDialog({assessment,file,state,setState,update,open,notify}:
     let ocrHash=0;for(let i=0;i<validatedOcr.length;i++)ocrHash=((ocrHash<<5)-ocrHash+validatedOcr.charCodeAt(i))|0;
     const evidenceFingerprint=[file.id,qpId,markingSchemeId,modelAnswerId,assessment.answerKey||"",assessment.rubric||"",analysisSubject,analysisGrade,ocrHash,alreadyGraded?reanalysisReason.trim():""].join("|");
     const previous:GradeResult|undefined=assessment.gradeResults?.[file.id];
-    if(ocrDocuments&&previous?.evidenceFingerprint===evidenceFingerprint){
+    if(ocrDocuments&&previous?.evidenceFingerprint===evidenceFingerprint&&!(previous.gradingSkipped&&!diagnosisOnly)){
       notify(`This evidence has not changed. The fixed score and learning gaps for ${previous.studentName} were reused.`);
       open(`student-gaps:${file.id}`);
       return;
@@ -967,10 +978,16 @@ function PerFileGradeDialog({assessment,file,state,setState,update,open,notify}:
       const detectedMaxMarks=Math.max(1,Math.round(Number(payload.maxMarks)||assessment.maxMarks));
       const questions:EvaluatorQuestion[]=(payload.questions||[]).map((question:any)=>({...question,reviewed:false,aiDisposition:"accepted"}));
       const score=questions.reduce((sum,question)=>sum+Number(question.awardedMarks||0),0);
-      const result:GradeResult={fileId:file.id,studentName:studentName.trim(),questionPaperFileId:qpId||undefined,questionPaperName:qp?.name,score,maxMarks:detectedMaxMarks,gaps,date:new Date().toISOString(),feedback:typeof payload.feedback==="string"?payload.feedback:undefined,ocrText:ocrDocuments.answerSheet?.text,evidenceFingerprint,reanalysisReason:alreadyGraded?reanalysisReason.trim():undefined,questionDecisions:questions};
-      setPendingAnalysis({result,questions});
-      setEvaluationErrors([]);
-      notify("AI proposal ready. Review every question before submitting the evaluation.","warning");
+      const result:GradeResult={fileId:file.id,studentName:studentName.trim(),questionPaperFileId:qpId||undefined,questionPaperName:qp?.name,score,maxMarks:detectedMaxMarks,gaps,date:new Date().toISOString(),feedback:typeof payload.feedback==="string"?payload.feedback:undefined,ocrText:ocrDocuments.answerSheet?.text,evidenceFingerprint,reanalysisReason:alreadyGraded?reanalysisReason.trim():undefined,questionDecisions:questions,gradingSkipped:diagnosisOnly||undefined};
+      if(diagnosisOnly){
+        update(assessment.id,{grade:selectedMapping?.grade||assessment.grade,section:selectedMapping?.section||assessment.section,subject:analysisSubject,maxMarks:detectedMaxMarks,gradeResults:{...(assessment.gradeResults||{}),[file.id]:result},lastGradedFileId:file.id,stage:"xray"});
+        notify(`${result.studentName}'s learning-gap diagnosis is ready. Grading was skipped.`);
+        close?.();openAssessment?.(assessment.id,"X-Ray");
+      }else{
+        setPendingAnalysis({result,questions});
+        setEvaluationErrors([]);
+        notify("AI proposal ready. Review every question before submitting the evaluation.","warning");
+      }
     }catch(err){
       clearInterval(timer);
       const message=err instanceof Error?err.message:"Grading failed";
@@ -1302,6 +1319,28 @@ function StudentEvidence({state,student,done}:any){
 function AcademicYearDialog({setState,done}:any){const submit=(e:FormEvent<HTMLFormElement>)=>{e.preventDefault();const f=new FormData(e.currentTarget);setState((s:DemoState)=>({...s,academicYears:[`${f.get("name")} · ${f.get("status")}`,...s.academicYears]}));done()};return <form onSubmit={submit}><DialogHead eyebrow="School calendar" title="Academic year"/><Field label="Name"><input name="name" required placeholder="2027–28"/></Field><div className="form-grid"><Field label="Start date"><input type="date" required/></Field><Field label="End date"><input type="date" required/></Field></div><Field label="Status"><select name="status"><option>Planned</option><option>Active</option><option>Archived</option></select></Field><button className="primary full">Save academic year</button></form>}
 function ConsentDialog({done}:any){return <form onSubmit={e=>{e.preventDefault();done()}}><DialogHead eyebrow="Privacy & consent" title="Data-processing choices"/><label className="check"><input type="checkbox" required defaultChecked/> I accept the terms and privacy policy</label><label className="check"><input type="checkbox" required defaultChecked/> I am authorised to upload school and student data</label><label className="check"><input type="checkbox" required defaultChecked/> I understand AI-assisted processing and teacher approval</label><label className="check"><input type="checkbox"/> Allow anonymised product improvement</label><button className="primary full">Save consent choices</button></form>}
 function SecurityDialog({done}:any){return <><DialogHead eyebrow="Sessions & security" title="Account protection"/><div className="list-item"><div><b>Windows · Chrome</b><small>Current session · Mumbai</small></div><span className="status success">Active</span></div><div className="list-item"><div><b>Android · Chrome</b><small>Last active 2 days ago</small></div><button onClick={()=>done()}>Revoke</button></div><label className="check"><input type="checkbox"/> Require MFA for administrator actions</label><button className="secondary full" onClick={done}>Log out all other devices</button></>}
+function DeleteAssessmentDialog({assessment,state,setState,openAssessment,done}:any){
+  const [busy,setBusy]=useState(false),[error,setError]=useState("");
+  const resourceCount=state.resources.filter((resource:Worksheet)=>resource.assessmentId===assessment.id).length;
+  const interventionCount=state.interventions.filter((item:Intervention)=>item.assessmentId===assessment.id).length;
+  const remove=async()=>{
+    setBusy(true);setError("");
+    try{
+      const results=await Promise.all((assessment.files||[]).map(async(file:UploadFile)=>{
+        const response=await authFetch(`/api/files/${encodeURIComponent(file.id)}`,{method:"DELETE"});
+        if(!response.ok&&response.status!==404)throw new Error(`${file.name} could not be deleted from secure storage.`);
+        try{await removeLocalFileBlob(file.id)}catch{}
+      }));
+      void results;
+      const nextAssessment=state.assessments.find((item:Assessment)=>item.id!==assessment.id);
+      try{sessionStorage.removeItem(bulkQueueKey(assessment.id))}catch{}
+      setState((current:DemoState)=>({...current,assessments:current.assessments.filter(item=>item.id!==assessment.id),resources:current.resources.filter(item=>item.assessmentId!==assessment.id),interventions:current.interventions.filter(item=>item.assessmentId!==assessment.id),events:[`Assessment deleted · ${assessment.title}`,...current.events]}));
+      openAssessment(nextAssessment?.id||"","Work");done();
+    }catch(cause){setError(cause instanceof Error?cause.message:"Assessment deletion failed. Retry to complete the secure cleanup.");setBusy(false)}
+  };
+  return <><DialogHead eyebrow="Permanent action" title="Delete Assessment"/><p className="modal-copy">Delete <b>{assessment.title}</b>? This permanently removes this assessment, its {assessment.files.length} uploaded file{assessment.files.length===1?"":"s"}, grading results, {resourceCount} generated resource{resourceCount===1?"":"s"}, and {interventionCount} linked intervention{interventionCount===1?"":"s"}. Unrelated assessments and resources will not be changed.</p><div className="validation-summary"><b>This action cannot be undone.</b><p>Confirm only if you want to remove all data that depends on this assessment.</p></div>{error&&<p className="form-error" role="alert">{error}</p>}<button className="primary full danger" disabled={busy} onClick={remove}>{busy?"Deleting assessment…":"Confirm Delete Assessment"}</button></>
+}
+
 function ConfirmDialog({eyebrow,title,text,action,onConfirm}:any){return <><DialogHead eyebrow={eyebrow} title={title}/><p className="modal-copy">{text}</p><button className="primary full" onClick={onConfirm}>{action}</button></>}
 
 function PageHead({eyebrow,title,subtitle,children}:{eyebrow:string;title:string;subtitle:string;children?:ReactNode}){return <div className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{subtitle}</p></div><div className="button-row">{children}</div></div>}
