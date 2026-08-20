@@ -117,7 +117,11 @@ export function validateEvaluationSubmission(submission: EvaluationSubmission): 
     if (question.aiDisposition !== "accepted" && !question.rationale?.trim()) errors.push(`${prefix}: a rationale is required when the AI proposal is edited or rejected.`);
     if (question.criteria?.length) {
       const criterionAward = question.criteria.reduce((sum, item) => sum + Number(item.awardedMarks || 0), 0);
-      if (Math.abs(criterionAward - question.awardedMarks) > 1e-8) errors.push(`${prefix}: criterion marks must equal the question award.`);
+      // Criterion rows are optional AI explanation metadata. A malformed AI
+      // breakdown must not block an unchanged accepted question award. Once an
+      // evaluator edits or rejects the proposal, the edited breakdown is
+      // validated strictly against the teacher-approved question total.
+      if (question.aiDisposition !== "accepted" && Math.abs(criterionAward - question.awardedMarks) > 1e-8) errors.push(`${prefix}: criterion marks must equal the question award.`);
     }
     totalAwarded += Number(question.awardedMarks || 0);
     totalMaximum += Number(question.maxMarks || 0);

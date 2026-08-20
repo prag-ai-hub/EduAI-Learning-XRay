@@ -46,3 +46,19 @@ test("malformed AI increment metadata falls back to half marks", () => {
   assert.equal(result.valid, true);
   assert.ok(!result.errors.some(error => error.includes("increments of 3.5")));
 });
+
+test("accepted AI award is not blocked by an inconsistent optional criterion breakdown", () => {
+  const input = valid();
+  input.questions[0].aiDisposition = "accepted";
+  input.questions[0].criteria = [{ id: "q1.c1", label: "Method", awardedMarks: 1, maxMarks: 2 }];
+  const result = validateEvaluationSubmission(input);
+  assert.equal(result.valid, true);
+});
+
+test("teacher-edited awards still require criterion totals to match", () => {
+  const input = valid();
+  input.questions[0].criteria = [{ id: "q1.c1", label: "Method", awardedMarks: 1, maxMarks: 2 }];
+  const result = validateEvaluationSubmission(input);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(error => error.includes("criterion marks must equal")));
+});
