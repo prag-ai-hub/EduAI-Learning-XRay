@@ -61,6 +61,11 @@ function isIncrement(value: number, increment: number) {
   return Math.abs(units - Math.round(units)) < 1e-8;
 }
 
+function normalizedMarkIncrement(value: unknown) {
+  const increment = Number(value);
+  return [0.25, 0.5, 1].includes(increment) ? increment : 0.5;
+}
+
 export function canonicalizeEvaluation(submission: EvaluationSubmission) {
   return JSON.stringify({
     assessmentId: submission.assessmentId,
@@ -102,7 +107,10 @@ export function validateEvaluationSubmission(submission: EvaluationSubmission): 
     if (!ATTEMPT_STATES.includes(question.attemptState)) errors.push(`${prefix}: attempt state is invalid.`);
     if (!finiteMark(question.maxMarks) || question.maxMarks <= 0) errors.push(`${prefix}: maximum marks must be greater than zero.`);
     if (!finiteMark(question.awardedMarks) || question.awardedMarks < 0 || question.awardedMarks > question.maxMarks) errors.push(`${prefix}: awarded marks are outside the allowed range.`);
-    const increment = finiteMark(question.allowedIncrement) && Number(question.allowedIncrement) > 0 ? Number(question.allowedIncrement) : 0.5;
+    // Model output occasionally confuses a question's awarded mark (for example 3.5)
+    // with its increment. Only supported school marking increments may constrain an
+    // evaluator submission; malformed model metadata safely falls back to half marks.
+    const increment = normalizedMarkIncrement(question.allowedIncrement);
     if (finiteMark(question.awardedMarks) && !isIncrement(question.awardedMarks, increment)) errors.push(`${prefix}: marks must use increments of ${increment}.`);
     if ((question.attemptState === "not_attempted" || question.attemptState === "excluded") && question.awardedMarks !== 0) errors.push(`${prefix}: ${question.attemptState.replace("_", " ")} must award zero marks.`);
     if (question.attemptState === "attempted" && !question.evidence?.trim()) errors.push(`${prefix}: answer evidence is required.`);

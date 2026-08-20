@@ -129,7 +129,7 @@ Produce the CBSE diagnostic result and exclude fully correct questions from gaps
       attemptState: ["attempted", "not_attempted", "excluded"].includes(question.attemptState) ? question.attemptState : "attempted",
       awardedMarks: Number(question.awardedMarks) || 0,
       maxMarks: Number(question.maxMarks) || 0,
-      allowedIncrement: Number(question.allowedIncrement) > 0 ? Number(question.allowedIncrement) : 0.5,
+      allowedIncrement: [0.25, 0.5, 1].includes(Number(question.allowedIncrement)) ? Number(question.allowedIncrement) : 0.5,
       evidence: String(question.evidence || ""),
       rationale: String(question.rationale || ""),
       confidence: Math.max(0, Math.min(1, Number(question.confidence) || 0)),

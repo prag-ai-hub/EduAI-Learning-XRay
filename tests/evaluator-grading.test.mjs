@@ -39,3 +39,10 @@ test("invalid increments and mismatched assessment totals are rejected", () => {
   assert.ok(result.errors.some(error => error.includes("increments of 0.5")));
   assert.ok(result.errors.some(error => error.includes("do not match the assessment total")));
 });
+
+test("malformed AI increment metadata falls back to half marks", () => {
+  const input = valid(); input.questions[0].allowedIncrement = 3.5;
+  const result = validateEvaluationSubmission(input);
+  assert.equal(result.valid, true);
+  assert.ok(!result.errors.some(error => error.includes("increments of 3.5")));
+});
