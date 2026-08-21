@@ -1506,7 +1506,6 @@ function pageNumberForQuestion(question:EvaluatorQuestion,index:number,ocrText:s
   // Use a matched OCR page only when its answer evidence is sufficiently clear.
   return bestScore>=Math.min(3,evidenceTokens.length)?bestPage:proposed;
 }
-
 async function sourcePageScreenshot(blob:Blob,file:UploadFile,pageNumber:number){
   if(file.type.startsWith("image/"))return blobToDataUri(blob);
   if(file.type!=="application/pdf"&&!/\.pdf$/i.test(file.name))throw new Error("A corrected answer sheet requires a PDF or image answer-sheet upload.");
