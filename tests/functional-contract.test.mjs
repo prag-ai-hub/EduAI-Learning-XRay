@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 
 const app = readFileSync(new URL("../app/ui/FunctionalEduAIApp.tsx", import.meta.url), "utf8");
+const parentShare = readFileSync(new URL("../app/ui/ParentShareDialog.tsx", import.meta.url), "utf8");
 const login = readFileSync(new URL("../app/signin/page.tsx", import.meta.url), "utf8");
 const marketing = readFileSync(new URL("../app/ui/MarketingHome.tsx", import.meta.url), "utf8");
 
@@ -79,7 +80,7 @@ test("teacher authority and anti-ranking safeguards remain explicit", () => {
 });
 
 test("learning-gap worksheet cycle is complete and downloadable", () => {
-  for (const capability of ["Select an answer sheet to begin", "Visual learning-gap report", "Targeted study guide", "Guided recovery", "Multiple-choice questions", "Subjective questions", "Grade answer worksheets", "Download graded results", "Check with answer key", "Teacher approves grades"]) {
+  for (const capability of ["Open this assessment in Review", "Visual learning-gap report", "Targeted study guide", "Guided recovery", "Multiple-choice questions", "Subjective questions", "Grade answer worksheets", "Download graded results", "Check with answer key", "Teacher approves grades"]) {
     assert.ok(app.includes(capability), `missing worksheet-cycle capability: ${capability}`);
   }
   assert.match(app, /function downloadWorksheet/);
@@ -95,8 +96,8 @@ test("grading stays bound to the selected uploaded assessment", () => {
   assert.match(app, /a\.files\.find/);
 });
 
-test("teacher explicitly chooses grading or learning-gap analysis", () => {
-  for (const capability of ["Grade answer sheet", "View learning gaps", "Select answer sheet for analysis", "Continue with this answer sheet", "Question paper", "Answer sheet", "gradedFileIds"]) {
+test("answer-sheet role explicitly chooses grading or learning-gap analysis", () => {
+  for (const capability of ["Grade answer sheet", "View learning gaps", "Select answer sheet for analysis", "Continue to grading & teacher review", "Read teacher marks & diagnose learning gaps", "Question paper", "Answer sheet", "gradedFileIds"]) {
     assert.ok(app.includes(capability), `missing explicit grading choice: ${capability}`);
   }
   assert.match(app, /assessmentHasGrades/);
@@ -114,7 +115,7 @@ test("class assessment analysis is hierarchical and reports are downloadable", (
   ]) assert.ok(app.includes(capability), `missing hierarchical analysis capability: ${capability}`);
   assert.match(app, /function downloadStudentLearningGapReport/);
   assert.match(app, /function downloadClassLearningGapReport/);
-  assert.doesNotMatch(app, />[^<]*Assignment[^<]*</);
+  assert.match(app, /Class & section → Subject → Assessment → Students/);
 });
 
 test("multi-file evidence is appended safely and analysis mapping is explicitly selected", () => {
@@ -125,6 +126,61 @@ test("multi-file evidence is appended safely and analysis mapping is explicitly 
   assert.match(app, /Field label="Subject"><select value=\{analysisSubject\}/);
   assert.match(app, /grade:selectedMapping\?\.grade/);
   assert.match(app, /section:selectedMapping\?\.section/);
+});
+
+test("multi-student analysis resumes when background generation starts", () => {
+  assert.match(app, /saveBulkAnalysisQueue\(assessment\.id,pending\.map/);
+  assert.match(app, /advanceBulkAnalysisQueue\(assessment\.id,file\.id\)/);
+  assert.match(app, /analysisDialogFor\(nextFile\)/);
+});
+
+test("teacher can generate all reports while the next student's OCR starts", () => {
+  assert.match(app, /Generate All Reports/);
+  assert.match(app, /generateAllStudentResources/);
+  assert.match(app, /Reports are generating in the background/);
+  assert.match(app, /bulkAnalysisQueue\(assessment\.id\)\.includes\(file\.id\)/);
+  assert.match(app, /analysisDialogFor\(nextFile\)/);
+});
+
+test("multi-student grading remounts OCR state for each answer sheet", () => {
+  assert.match(app, /<PerFileGradeDialog key=\{id\}/);
+  assert.match(app, /advanceBulkAnalysisQueue\(assessment\.id,file\.id\)/);
+});
+
+test("learning gap view restores the executive summary", () => {
+  assert.match(app, /Student performance and priority learning gaps/);
+  assert.match(app, /Overall performance/);
+  assert.match(app, /Learning-gap summary/);
+});
+
+test("reports name the former heatmap Performance matrix report", () => {
+  assert.match(app, /Performance matrix report/);
+  assert.doesNotMatch(app, /<option>Class heatmap<\/option>/);
+});
+
+test("principal dashboard provides four-band class and subject drill-down", () => {
+  for (const label of ["90% and above", "75–89%", "55–74%", "Below 55%", "Performance matrix report", "Class drill-down"]) assert.ok(app.includes(label));
+  assert.match(app, /percentage>=90\?"green":percentage>=75\?"yellow":percentage>=55\?"orange":"red"/);
+  assert.match(app, /setSelectedCell/);
+});
+
+test("performance matrix report uses majority bands and student drill-down", () => {
+  for (const threshold of ["percentage>=90", "percentage>=75", "percentage>=55"]) assert.ok(app.includes(threshold));
+  assert.match(app, /majority \$\{data\.band\}/);
+  assert.match(app, /SchoolPerformanceMatrix/);
+  assert.match(app, /Class drill-down/);
+});
+
+test("QR sharing copies with a compatible fallback and status", () => {
+  assert.match(parentShare, /navigator\.clipboard\?\.writeText/);
+  assert.match(parentShare, /document\.execCommand\("copy"\)/);
+  assert.match(parentShare, /Press Ctrl\+C to copy the selected link/);
+});
+
+test("resources expose student-specific signed parent QR sharing", () => {
+  assert.match(app, /parent-share:/);
+  assert.match(app, /Share with parent/);
+  assert.match(app, /ParentShareDialog/);
 });
 
 test("active class master data and visible terminology use Class consistently", () => {
@@ -181,6 +237,15 @@ test("all generated downloads use branded PDF documents with reusable visuals", 
   assert.doesNotMatch(app, /application\/msword/);
   assert.doesNotMatch(app, /a\.download=.*\.doc`/);
   assert.doesNotMatch(app, /type:"text\/plain;charset=utf-8"/);
+  assert.doesNotMatch(app, /Resource_Generation_Status\.pdf/);
+  assert.match(app, /All four reports must finish generating before download/);
+  assert.match(app, /studentLearningGapDocumentBody\(assessment,result\)/);
+  assert.match(app, /studyGuideDocumentBody\(guide\.guide,guide\.evidenceFiles/);
+  assert.doesNotMatch(app, /Missing_Files\.txt/);
+  assert.match(app, /worksheetDocumentBody\(worksheet\.content\),false/);
+  assert.match(app, /answerKeyDocumentBody\(worksheet\.content\),false/);
+  assert.match(app, /studyGuideDocumentBody\(guide\.guide,guide\.evidenceFiles/);
+  assert.match(app, /String\.fromCharCode\(\.\.\.bytes\.slice\(0,5\)\)!=="%PDF-"/);
 });
 
 test("heatmap uses weak, average and excellent score bands", () => {
@@ -207,6 +272,87 @@ test("teacher authentication and first-login onboarding are complete", () => {
   assert.match(app, /auth\.signOut/);
   assert.match(app, /authFetch\("\/api\/profile"/);
   assert.match(app, /assessments:\[\]/);
+});
+
+test("legacy Supabase schemas do not crash authentication or credit display", () => {
+  const authorization = readFileSync(new URL("../lib/authorization.ts", import.meta.url), "utf8");
+  const credits = readFileSync(new URL("../app/api/credits/route.ts", import.meta.url), "utf8");
+  assert.match(authorization, /legacyCreditSchema/);
+  assert.match(authorization, /total_credits:0,used_credits:0/);
+  assert.match(credits, /creditLedgerAvailable:!migrationPending/);
+  assert.match(credits, /PGRST205/);
+});
+
+test("assessment deletion is confirmed and cascades only assessment-owned state", () => {
+  for (const capability of ["Delete Assessment", "Confirm Delete Assessment", "This action cannot be undone", "Assessment and all associated resources deleted"]) assert.ok(app.includes(capability));
+  assert.match(app, /assessments:current\.assessments\.filter\(item=>item\.id!==assessment\.id\)/);
+  assert.match(app, /resources:current\.resources\.filter\(item=>item\.assessmentId!==assessment\.id\)/);
+  assert.match(app, /interventions:current\.interventions\.filter\(item=>item\.assessmentId!==assessment\.id\)/);
+  assert.match(app, /authFetch\(`\/api\/files\/\$\{encodeURIComponent\(file\.id\)\}`/);
+});
+
+test("answer-sheet classification controls grading versus direct diagnosis", () => {
+  assert.match(app, /function analysisDialogFor\(file:UploadFile\)/);
+  assert.match(app, /Teacher-graded answer sheet.*diagnose-file.*grade-file/);
+  assert.match(app, /Read teacher marks & diagnose learning gaps/);
+  assert.match(app, /Continue to grading & teacher review/);
+  assert.match(app, /gradingSkipped:diagnosisOnly\|\|undefined/);
+  assert.match(app, /teacher-awarded marks were analysed/);
+  assert.match(app, /generateAllStudentResources\(\{\.\.\.assessment,subject:analysisSubject/);
+  assert.match(app, /openAssessment\?\.\(assessment\.id,"X-Ray"\)/);
+  assert.match(app, /const alreadyGraded=Boolean\(assessment\.gradeResults\?\.\[file\.id\]&&!assessment\.gradeResults\[file\.id\]\.gradingSkipped\)/);
+});
+
+test("review tab is a continuous five-stage question workspace", () => {
+  for (const capability of ["PAGE {pageIndex+1} OF {pageNumbers.length}", "END OF PAGE", "1. Question", "2. Student Handwritten Answer", "3. OCR (Extracted Text)", "4. Marking Done by AI", "5. Edit Marks & Comments — Teacher"]) {
+    assert.ok(app.includes(capability), `missing continuous review capability: ${capability}`);
+  }
+  assert.match(app, /continuous-review-workspace/);
+  assert.match(app, /Original handwritten answer/);
+  assert.match(app, /object data=\{`\$\{sourceUrl\}#page=\$\{pageNumber\}`\}/);
+  assert.doesNotMatch(app, /Next Page/);
+});
+
+test("review tab preserves student and question jump navigation", () => {
+  for (const capability of ["← Previous Student", "Current student", "Next Student →", "question-navigator", "scrollIntoView", "Reviewed", "Pending", "Not Answered"]) assert.ok(app.includes(capability), `missing review navigation capability: ${capability}`);
+  assert.match(app, /disabled=\{studentIndex===0\}/);
+  assert.match(app, /disabled=\{studentIndex===results\.length-1\}/);
+});
+
+test("teacher question edits autosave into the existing grade result", () => {
+  for (const capability of ["AI Awarded Marks", "Teacher Edited Marks", "Teacher Comments (Optional)", "✓ Auto-saved", "Submit Review", "Overall Summary"]) assert.ok(app.includes(capability), `missing teacher review behavior: ${capability}`);
+  assert.match(app, /gradeResults:\{\.\.\.\(assessment\.gradeResults\|\|\{\}\),\[current\.fileId\]/);
+  assert.match(app, /score=questionDecisions\.filter/);
+  assert.match(app, /teacherComment/);
+  assert.match(app, /aiAwardedMarks/);
+});
+
+test("review tab matches the approved reference hierarchy", () => {
+  for (const capability of ["review-top-actions", "review-student-details", "review-summary-compact", "review-score-ring", "Back to Submissions", "Submitted On", "Overall Summary", "Create Corrected Answer Sheet"]) assert.ok(app.includes(capability), `missing approved review layout: ${capability}`);
+  assert.match(app, /Student Name<\/small><b>\{current\.studentName\}/);
+  assert.match(app, /Create Corrected Answer Sheet/);
+});
+
+test("review exports a student-facing corrected answer sheet with the source page and feedback per question", () => {
+  for (const capability of ["downloadCorrectedAnswerSheet", "sourcePageScreenshot", "Source answer-sheet page", "Final marks:", "Total score:", "AI feedback", "Teacher comment"]) assert.ok(app.includes(capability), `missing corrected-answer-sheet export capability: ${capability}`);
+  assert.match(app, /question\.pageNumber/);
+  assert.match(app, /pdf\.addImage\(screenshot/);
+  assert.match(app, /verifiedPdfBytes\(pdf\.output\("blob"\)\)/);
+});
+
+test("assessment actions open the selected assessment directly in Review without an OCR popup", () => {
+  const decision = app.slice(app.indexOf("function AssessmentDecision"), app.indexOf("function AssessmentJourney"));
+  assert.match(decision, /Analyse Assessment<\/button><button className="secondary" onClick=\{\(\)=>openAssessment\(a\.id,"Review"\)\}>Check Multiple Students/);
+  assert.doesNotMatch(decision, /open\("grade-picker"/);
+  assert.doesNotMatch(decision, /open\("bulk-analysis"/);
+});
+
+test("Review tab is the single approval and resource-generation workflow", () => {
+  for (const capability of ["Submit Review & Generate Resource", "Bulk Approval & Generate Resource", "Resources are generating in the background", "Bulk approval started"]) assert.ok(app.includes(capability), `missing review approval workflow: ${capability}`);
+  assert.match(app, /generateAllStudentResources\(assessment,finalResult,setState\)/);
+  assert.match(app, /approved\.forEach\(result=>void generateAllStudentResources/);
+  assert.match(app, /AI grading is ready in the Review tab/);
+  assert.match(app, /openAssessment\?\.\(assessment\.id,"Review"\)/);
 });
 
 test("analysis derives totals from the compulsory question paper and uses both reference answers", () => {
@@ -305,6 +451,7 @@ test("Mistral OCR evidence drives OpenAI learning resources", () => {
   const worksheet = readFileSync(new URL("../app/api/generate-worksheet/route.ts", import.meta.url), "utf8");
   const studyGuide = readFileSync(new URL("../app/api/generate-study-guide/route.ts", import.meta.url), "utf8");
   assert.match(ocr, /extractDocumentText/);
+  assert.match(grade, /pageNumber/);
   assert.match(extraction, /mistral-ocr-latest/);
   assert.match(grade, /gpt-5\.6-sol/);
   assert.match(worksheet, /Subject: \$\{subject\}/);
@@ -318,7 +465,7 @@ test("OCR must be teacher-validated before CBSE gap analysis", () => {
   const ocr = readFileSync(new URL("../app/api/ocr/route.ts", import.meta.url), "utf8");
   assert.doesNotMatch(ocr, /api\.openai\.com/);
   assert.doesNotMatch(grade, /api\.mistral\.ai/);
-  for (const behavior of ["Check the extracted text", "Teacher validation required", "Validate OCR text & generate learning-gap report", 'authFetch("/api/ocr"', 'authFetch("/api/grade"']) assert.ok(app.includes(behavior), `missing OCR validation behavior: ${behavior}`);
+  for (const behavior of ["Check the extracted text", "Teacher validation required", "Generate All Reports", 'authFetch("/api/ocr"', 'authFetch("/api/grade"']) assert.ok(app.includes(behavior), `missing OCR validation behavior: ${behavior}`);
   assert.match(grade, /Focus ONLY on questions that are completely wrong, partially correct, unanswered, incomplete/);
   assert.match(grade, /Do not create learning gaps from fully correct answers/);
   assert.match(grade, /observed error -> immediate gap -> misconception\/skill weakness -> prerequisite gap -> learning consequence/);
