@@ -340,11 +340,14 @@ test("review exports a student-facing corrected answer sheet with the source pag
   assert.match(app, /verifiedPdfBytes\(pdf\.output\("blob"\)\)/);
 });
 
-test("assessment actions open the selected assessment directly in Review without an OCR popup", () => {
+test("assessment actions run AI grading without OCR review and then open Review", () => {
   const decision = app.slice(app.indexOf("function AssessmentDecision"), app.indexOf("function AssessmentJourney"));
-  assert.match(decision, /Analyse Assessment<\/button><button className="secondary" onClick=\{\(\)=>openAssessment\(a\.id,"Review"\)\}>Check Multiple Students/);
-  assert.doesNotMatch(decision, /open\("grade-picker"/);
-  assert.doesNotMatch(decision, /open\("bulk-analysis"/);
+  assert.match(decision, /Analyse Assessment<\/button><button className="secondary" onClick=\{\(\)=>open\("bulk-analysis"\)\}>Check Multiple Students/);
+  assert.match(decision, /onClick=\{\(\)=>open\("grade-picker"\)\}>Analyse Assessment/);
+  assert.match(app, /auto-grade-file/);
+  assert.match(app, /title="AI Grading"/);
+  assert.match(app, /OCR runs in the background and is not shown for review/);
+  assert.match(app, /openAssessment\?\.\(assessment\.id,"Review"\)/);
 });
 
 test("Review tab is the single approval and resource-generation workflow", () => {
