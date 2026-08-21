@@ -61,7 +61,7 @@ async function extractWithMistral(document: TextDocument, apiKey: string) {
   const ms = Date.now() - startedAt;
   if (!response.ok) throw new Error(`Mistral OCR failed for ${document.name}: ${await response.text()}`);
   const data = await response.json();
-  const text = (data?.pages || []).map((page: { markdown?: string }) => page.markdown || "").join("\n\n").trim();
+  const text = (data?.pages || []).map((page: { markdown?: string }, index: number) => `--- Page ${index + 1} ---\n${page.markdown || ""}`).join("\n\n").trim();
   if (!text) throw new Error(`No readable text was found in ${document.name}.`);
   return { text, ms, provider: "mistral" as const };
 }

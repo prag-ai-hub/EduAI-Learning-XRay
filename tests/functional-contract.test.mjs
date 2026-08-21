@@ -80,7 +80,7 @@ test("teacher authority and anti-ranking safeguards remain explicit", () => {
 });
 
 test("learning-gap worksheet cycle is complete and downloadable", () => {
-  for (const capability of ["Select an answer sheet to begin", "Visual learning-gap report", "Targeted study guide", "Guided recovery", "Multiple-choice questions", "Subjective questions", "Grade answer worksheets", "Download graded results", "Check with answer key", "Teacher approves grades"]) {
+  for (const capability of ["Open this assessment in Review", "Visual learning-gap report", "Targeted study guide", "Guided recovery", "Multiple-choice questions", "Subjective questions", "Grade answer worksheets", "Download graded results", "Check with answer key", "Teacher approves grades"]) {
     assert.ok(app.includes(capability), `missing worksheet-cycle capability: ${capability}`);
   }
   assert.match(app, /function downloadWorksheet/);
@@ -334,10 +334,17 @@ test("review tab matches the approved reference hierarchy", () => {
 });
 
 test("review exports a student-facing corrected answer sheet with the source page and feedback per question", () => {
-  for (const capability of ["downloadCorrectedAnswerSheet", "sourcePageScreenshot", "Source answer-sheet page", "Final marks:", "AI feedback", "Teacher comment"]) assert.ok(app.includes(capability), `missing corrected-answer-sheet export capability: ${capability}`);
+  for (const capability of ["downloadCorrectedAnswerSheet", "sourcePageScreenshot", "Source answer-sheet page", "Final marks:", "Total score:", "AI feedback", "Teacher comment"]) assert.ok(app.includes(capability), `missing corrected-answer-sheet export capability: ${capability}`);
   assert.match(app, /question\.pageNumber/);
   assert.match(app, /pdf\.addImage\(screenshot/);
   assert.match(app, /verifiedPdfBytes\(pdf\.output\("blob"\)\)/);
+});
+
+test("assessment actions open the selected assessment directly in Review without an OCR popup", () => {
+  const decision = app.slice(app.indexOf("function AssessmentDecision"), app.indexOf("function AssessmentJourney"));
+  assert.match(decision, /Analyse Assessment<\/button><button className="secondary" onClick=\{\(\)=>openAssessment\(a\.id,"Review"\)\}>Check Multiple Students/);
+  assert.doesNotMatch(decision, /open\("grade-picker"/);
+  assert.doesNotMatch(decision, /open\("bulk-analysis"/);
 });
 
 test("Review tab is the single approval and resource-generation workflow", () => {
@@ -444,6 +451,7 @@ test("Mistral OCR evidence drives OpenAI learning resources", () => {
   const worksheet = readFileSync(new URL("../app/api/generate-worksheet/route.ts", import.meta.url), "utf8");
   const studyGuide = readFileSync(new URL("../app/api/generate-study-guide/route.ts", import.meta.url), "utf8");
   assert.match(ocr, /extractDocumentText/);
+  assert.match(grade, /pageNumber/);
   assert.match(extraction, /mistral-ocr-latest/);
   assert.match(grade, /gpt-5\.6-sol/);
   assert.match(worksheet, /Subject: \$\{subject\}/);
