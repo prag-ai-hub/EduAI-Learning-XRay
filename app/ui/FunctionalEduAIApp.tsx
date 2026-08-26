@@ -8,7 +8,7 @@ import { zipSync } from "fflate";
 import ParentShareDialog from "./ParentShareDialog";
 
 type Role = "Teacher" | "Admin" | "Principal" | "School admin" | "Platform admin";
-type TeacherModule = "Home" | "Work" | "Review" | "X-Ray" | "Interventions" | "Students" | "Resources" | "Achievements" | "Reports" | "Settings";
+type TeacherModule = "Home" | "Work" | "Review" | "X-Ray" | "Holistic Progress" | "Interventions" | "Students" | "Resources" | "Achievements" | "Reports" | "Settings";
 type AdminModule = "Overview" | "Users" | "Schools & Classes" | "Students" | "Academic years" | "Branding & Privacy" | "Schools" | "Analytics" | "AI Configuration" | "Feature flags" | "System health" | "Audit" | "Reports";
 type Stage = "draft" | "uploaded" | "setup" | "grading" | "review" | "approved" | "xray" | "intervention" | "followup" | "published";
 type Gap = {concept:string; mastery:number;finding?:string;misconception?:string;evidence?:string;prerequisiteConcept?:string;foundationGap?:string;recommendedLevel?:string;remediationSequence?:string[];rework?:string;severity?:"priority"|"developing"|"secure"};
@@ -60,7 +60,7 @@ const initialState:DemoState = {
 };
 
 const stageLabel:Record<Stage,string>={draft:"Draft",uploaded:"Uploaded",setup:"Rubric setup",grading:"AI grading",review:"Teacher review",approved:"Approved",xray:"X-Ray ready",intervention:"Intervention",followup:"Follow-up",published:"Published"};
-const teacherNav:TeacherModule[]=["Home","Work","Review","X-Ray","Interventions","Students","Resources","Achievements","Reports","Settings"];
+const teacherNav:TeacherModule[]=["Home","Work","Review","X-Ray","Holistic Progress","Interventions","Students","Resources","Achievements","Reports","Settings"];
 const demoAccounts:DemoProfile[]=[
   {id:"demo-teacher",name:"Asha Sharma",email:"asha@sunrise.demo",role:"Teacher",school:"Sunrise Academy",label:"Teacher demo"},
   {id:"demo-principal",name:"Rohan Mehta",email:"principal@sunrise.demo",role:"Principal",school:"Sunrise Academy",label:"Principal demo"},
@@ -346,12 +346,30 @@ function TeacherApp({profile,module,state,selected,openAssessment,open,notify,up
   if(module==="Work")return <Work state={state} setState={setState} selected={selected} openAssessment={openAssessment} open={open} update={update} notify={notify}/>;
   if(module==="Review")return <Review selected={selected} update={update} notify={notify} open={open} setState={setState}/>;
   if(module==="X-Ray")return <XRay state={state} setState={setState} selected={selected} openAssessment={openAssessment} open={open} notify={notify}/>;
+  if(module==="Holistic Progress")return <HolisticProgress profile={profile} state={state}/>;
   if(module==="Interventions")return <Interventions state={state} setState={setState} open={open} notify={notify}/>;
   if(module==="Students")return <StudentsView state={state} open={open} notify={notify}/>;
   if(module==="Resources")return <ResourcesView state={state} setState={setState} open={open} notify={notify}/>;
   if(module==="Achievements")return <AchievementsView state={state} notify={notify}/>;
   if(module==="Settings")return <SettingsView open={open} notify={notify}/>;
   return <Reports state={state} open={open} notify={notify}/>;
+}
+
+function HolisticProgress({profile,state}:{profile:DemoProfile;state:DemoState}){
+  const [foundation,setFoundation]=useState<{enabled:boolean;frameworkReady:boolean;approvedFrameworkCount:number}|null>(null);
+  const [error,setError]=useState("");
+  useEffect(()=>{let active=true;void authFetch("/api/hpc/foundation",{cache:"no-store"}).then(async response=>{
+    const payload=await response.json();
+    if(!response.ok)throw new Error(payload.error||"Unable to load Holistic Progress.");
+    if(active)setFoundation(payload);
+  }).catch((cause:unknown)=>{if(active)setError(cause instanceof Error?cause.message:"Unable to load Holistic Progress.")});return()=>{active=false}},[]);
+  const middleStageStudents=state.students.filter(student=>/^(Class|Grade)\s*[6-8]/i.test(student.className));
+  return <><PageHead eyebrow="PARAKH / NCERT framework" title="Holistic Progress" subtitle="A separate evidence-led learner view. Learning X-Ray marks and HPC observations are never combined."><span className="status neutral">Middle Stage · Classes 6–8</span></PageHead>
+    <section className="hpc-hero"><div><p className="eyebrow">HPC foundation</p><h2>See the learner beyond a score.</h2><p>Structure follows the official Middle Stage guide: general information, All About Me, ambition, parent-teacher partnership, student progress, and holistic year summary.</p></div><div className="hpc-source"><b>Official source</b><a href="https://parakh.ncert.gov.in/themes/parakh/hpc-files/2-How-to-fill-the-HPC-%28Middle-Stage%29.pdf" target="_blank" rel="noreferrer">PARAKH/NCERT · How to fill the HPC (Middle Stage) ↗</a></div></section>
+    {error?<section className="card"><p className="eyebrow">Setup check</p><h2>HPC setup is unavailable</h2><p>{error}</p></section>:<><section className="metric-grid hpc-metrics"><Metric label="HPC access" value={foundation?.enabled?"Enabled":"Safely off"} note="Controlled independently per school"/><Metric label="Approved frameworks" value={foundation?String(foundation.approvedFrameworkCount):"…"} note="Official source version required"/><Metric label="Middle Stage learners" value={String(middleStageStudents.length)} note="Learner profiles stay separate"/><Metric label="Academic score blending" value="Never" note="No combined score or ranking"/></section>
+    <section className="hpc-roadmap"><article><span>Part A</span><h3>Know the learner</h3><p>General information, interests, All About Me and learner context.</p></article><article><span>Part A</span><h3>Plan with the learner</h3><p>Ambition, goals and parent-teacher partnership.</p></article><article><span>Part B</span><h3>Record progress</h3><p>Observations linked to curricular goals, competencies and abilities.</p></article><article><span>Part C</span><h3>Summarise growth</h3><p>Teacher-approved holistic summary for the academic year.</p></article></section>
+    <section className="card hpc-readiness"><div><p className="eyebrow">Next controlled step</p><h2>{foundation?.frameworkReady?"Official framework is ready for learner setup":"Awaiting approved PARAKH framework package"}</h2><p>{foundation?.frameworkReady?"The school can enable its approved stage template before teachers record evidence.":"The product foundation is in place, but official descriptors are not invented or auto-filled. A school administrator must approve the source version before learner-level records can be opened."}</p></div><div className="hpc-abilities"><b>Middle Stage assessment lenses</b><span>Awareness</span><span>Sensitivity</span><span>Creativity</span><small>Performance descriptors will be loaded only from the approved official framework version.</small></div></section></>}
+  </>;
 }
 
 function TeacherHome({profile,state,openAssessment,open}:any){
