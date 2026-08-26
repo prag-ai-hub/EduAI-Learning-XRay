@@ -442,6 +442,11 @@ function LegacyReview({selected,update,notify,open}:any){
 }
 
 function Review({selected,update,notify,open,setState}:any){
+  if(!selected)return <><PageHead eyebrow="Teacher workspace" title="Review" subtitle="Review opens after you create an assessment and process at least one student answer sheet."><button className="primary" onClick={()=>open("create-assessment")}>＋ Create assessment</button></PageHead><section className="card span-2"><p className="eyebrow">Nothing to review yet</p><h2>Create an assessment first</h2><p>Add the question paper and student work in Work. After AI processing, the answer sheets will appear here for teacher review.</p><button className="secondary" onClick={()=>open("upload")}>Upload student work</button></section></>;
+  return <ReviewWorkspace selected={selected} update={update} notify={notify} open={open} setState={setState}/>;
+}
+
+function ReviewWorkspace({selected,update,notify,open,setState}:any){
   const assessment:Assessment=selected;
   const results=(Object.values(assessment.gradeResults||{}) as GradeResult[]).sort((left,right)=>left.date.localeCompare(right.date));
   const [studentIndex,setStudentIndex]=useState(0);
