@@ -187,8 +187,18 @@ export default function FunctionalEduAIApp(){
         setLoading(false);
       };
       const {data}=await supabase.auth.getSession();
-      await apply(data.session);
-      const {data:subscription}=supabase.auth.onAuthStateChange((_event:any,next:any)=>{void apply(next).catch(error=>{setAuthError(error.message);setLoading(false)})});
+      const recoverAuthError=async(error:unknown)=>{
+        const message=error instanceof Error?error.message:"Authentication failed.";
+        if(/jwt issued at future/i.test(message)){
+          await supabase.auth.signOut({scope:"local"});
+          activeAccessToken="";
+          setSession(null);setProfile(null);setNeedsProfile(false);
+          setAuthError("Your email was confirmed, but the temporary sign-in link is still synchronising. Please wait a minute, then sign in with your email and password.");
+        }else setAuthError(message);
+        setLoading(false);
+      };
+      await apply(data.session).catch(recoverAuthError);
+      const {data:subscription}=supabase.auth.onAuthStateChange((_event:any,next:any)=>{void apply(next).catch(error=>{void recoverAuthError(error)})});
       unsubscribe=()=>subscription.subscription.unsubscribe();
     }catch(error){if(alive){setAuthError(error instanceof Error?error.message:"Authentication failed.");setLoading(false)}}
   })();return()=>{alive=false;unsubscribe?.()}},[]);
