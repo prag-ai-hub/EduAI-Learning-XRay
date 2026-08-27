@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   if (profile instanceof Response) return profile;
   const { data, error } = await getSupabaseServer()
     .from("hpc_learner_profiles")
-    .select("id,academic_year,attendance_percentage,interests_json,context_json,students(id,name,roll_number,status)")
+    .select("id,academic_year,grade,attendance_percentage,interests_json,context_json,students(id,name,roll_number,status)")
     .eq("school_id", profile.school_id)
     .order("updated_at", { ascending: false });
   if (error) return Response.json({ error: error.message }, { status: 500 });
@@ -18,11 +18,12 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const profile = await getAuthorizedProfile(request);
   if (profile instanceof Response) return profile;
-  const body = await request.json() as { name?: string; rollNumber?: string; academicYear?: string; interests?: string[]; allAboutMe?: string };
+  const body = await request.json() as { name?: string; rollNumber?: string; academicYear?: string; grade?: number; interests?: string[]; allAboutMe?: string };
   const name = String(body.name || "").trim();
   const academicYear = String(body.academicYear || "").trim();
-  if (name.length < 2 || !academicYearPattern.test(academicYear)) {
-    return Response.json({ error: "Learner name and an academic year in YYYY-YY format are required." }, { status: 400 });
+  const grade = Number(body.grade);
+  if (name.length < 2 || !academicYearPattern.test(academicYear) || !Number.isInteger(grade) || grade < 0 || grade > 12) {
+    return Response.json({ error: "Learner name, grade and an academic year in YYYY-YY format are required." }, { status: 400 });
   }
   const db = getSupabaseServer();
   const studentId = `hpc-student-${crypto.randomUUID()}`;
@@ -34,10 +35,11 @@ export async function POST(request: Request) {
     school_id: profile.school_id,
     student_id: studentId,
     academic_year: academicYear,
+    grade,
     interests_json: Array.isArray(body.interests) ? body.interests.filter(value => typeof value === "string" && value.trim()).map(value => value.trim()) : [],
     context_json: { all_about_me: String(body.allAboutMe || "").trim() },
     updated_by: profile.id,
-  }).select("id,academic_year,attendance_percentage,interests_json,context_json,students(id,name,roll_number,status)").single();
+  }).select("id,academic_year,grade,attendance_percentage,interests_json,context_json,students(id,name,roll_number,status)").single();
   if (learnerError) return Response.json({ error: learnerError.message }, { status: 500 });
   return Response.json({ learner }, { status: 201 });
 }
