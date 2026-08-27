@@ -86,9 +86,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ lea
 
   if (body.action === "mapping") {
     const domainId = String(body.domainId || "");
+    const curricularGoalId = String(body.curricularGoalId || "");
+    const competencyId = String(body.competencyId || "");
+    const abilityId = String(body.abilityId || "");
     const { data: domain, error: domainError } = await db.from("hpc_domains").select("id,framework_version_id,label").eq("id", domainId).maybeSingle();
     if (domainError || !domain) return Response.json({ error: "Choose an approved framework domain." }, { status: 400 });
-    const { data, error: mappingError } = await db.from("hpc_competency_mappings").insert({ school_id: profile.school_id, learner_profile_id: learner.id, framework_version_id: domain.framework_version_id, domain_id: domain.id, mapping_note: String(body.mappingNote || "").trim() || null, mapping_status: "teacher_review_required", created_by: profile.id }).select("id,mapping_note,mapping_status,created_at,hpc_domains(label,code),hpc_curricular_goals(code,label),hpc_competencies(code,label),hpc_learning_outcomes(code,label),hpc_abilities(label)").single();
+    const { data: competency, error: competencyError } = await db.from("hpc_competencies").select("id,curricular_goal_id,hpc_curricular_goals!inner(id,domain_id)").eq("id", competencyId).eq("curricular_goal_id", curricularGoalId).maybeSingle();
+    if (competencyError || !competency || (competency.hpc_curricular_goals as { domain_id?: string } | null)?.domain_id !== domain.id) return Response.json({ error: "Choose an official curricular goal and competency from the selected domain." }, { status: 400 });
+    if (abilityId) {
+      const { data: ability, error: abilityError } = await db.from("hpc_abilities").select("id").eq("id", abilityId).eq("framework_version_id", domain.framework_version_id).maybeSingle();
+      if (abilityError || !ability) return Response.json({ error: "Choose an ability from the approved framework." }, { status: 400 });
+    }
+    const { data, error: mappingError } = await db.from("hpc_competency_mappings").insert({ school_id: profile.school_id, learner_profile_id: learner.id, framework_version_id: domain.framework_version_id, domain_id: domain.id, curricular_goal_id: curricularGoalId, competency_id: competencyId, ability_id: abilityId || null, mapping_note: String(body.mappingNote || "").trim() || null, mapping_status: "teacher_review_required", created_by: profile.id }).select("id,mapping_note,mapping_status,created_at,hpc_domains(label,code),hpc_curricular_goals(code,label),hpc_competencies(code,label),hpc_learning_outcomes(code,label),hpc_abilities(label)").single();
     if (mappingError) return Response.json({ error: mappingError.message }, { status: 500 });
     return Response.json({ mapping: data }, { status: 201 });
   }

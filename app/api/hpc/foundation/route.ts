@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   const framework = frameworks?.[0];
   const [sectionsResult, abilitiesResult, levelsResult, domainsResult] = framework ? await Promise.all([
     db.from("hpc_stage_templates").select("id,hpc_template_sections(section_code,title,sort_order,required)").eq("framework_version_id", framework.id).eq("stage_code", "middle").maybeSingle(),
-    db.from("hpc_abilities").select("code,label").eq("framework_version_id", framework.id).order("label"),
+    db.from("hpc_abilities").select("id,code,label").eq("framework_version_id", framework.id).order("label"),
     db.from("hpc_performance_levels").select("code,label,score_from,score_to,sort_order").eq("framework_version_id", framework.id).order("sort_order"),
     db.from("hpc_domains").select("code,label").eq("framework_version_id", framework.id).order("label"),
   ]) : [null, null, null, null];
