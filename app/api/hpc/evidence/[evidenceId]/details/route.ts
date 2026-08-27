@@ -1,6 +1,15 @@
 import { getAuthorizedProfile } from "../../../../../../lib/authorization";
 import { getSupabaseServer } from "../../../../../../lib/supabase-server";
 
+export async function GET(request: Request, { params }: { params: Promise<{ evidenceId: string }> }) {
+  const profile = await getAuthorizedProfile(request); if (profile instanceof Response) return profile;
+  const { evidenceId } = await params, db = getSupabaseServer();
+  const { data: evidence, error } = await db.from("hpc_evidence").select("id,source_type,content,attachment_reference,review_status,sufficiency_status,observed_at").eq("id", evidenceId).eq("school_id", profile.school_id).maybeSingle();
+  if (error || !evidence) return Response.json({ error: error?.message || "Evidence not found." }, { status: error ? 500 : 404 });
+  const { data: mappings } = await db.from("hpc_evidence_mappings").select("hpc_abilities(label),hpc_competencies(code,label),hpc_learning_outcomes(code,label)").eq("evidence_id", evidenceId);
+  return Response.json({ evidence, mappings: mappings || [] });
+}
+
 export async function POST(request: Request, { params }: { params: Promise<{ evidenceId: string }> }) {
   const profile = await getAuthorizedProfile(request); if (profile instanceof Response) return profile;
   if (!profile.school_id) return Response.json({ error: "A school profile is required." }, { status: 403 });
