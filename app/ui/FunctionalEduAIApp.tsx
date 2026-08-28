@@ -174,7 +174,16 @@ export default function FunctionalEduAIApp(){
       // operations independent in this isolated test site so sign-in and saved
       // session restoration cannot be blocked by another open HPC tab.
       const authLock=async <T,>(_name:string,_acquireTimeout:number,fn:()=>Promise<T>)=>fn();
-      const supabase=createClient(config.url,config.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,lock:authLock}});
+      const authProxyFetch=async(input:RequestInfo|URL,init?:RequestInit)=>{
+        const request=new Request(input,init);
+        const target=new URL(request.url);
+        if(target.origin!==new URL(config.url).origin||!target.pathname.startsWith("/auth/v1/"))return fetch(request);
+        const proxyUrl=new URL("/api/auth/proxy",location.origin);
+        proxyUrl.searchParams.set("path",target.pathname.slice("/auth/v1/".length));
+        target.searchParams.forEach((value,key)=>proxyUrl.searchParams.append(key,value));
+        return fetch(proxyUrl,{method:request.method,headers:request.headers,body:["GET","HEAD"].includes(request.method)?undefined:await request.clone().arrayBuffer(),signal:request.signal,redirect:request.redirect,cache:"no-store"});
+      };
+      const supabase=createClient(config.url,config.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,lock:authLock},global:{fetch:authProxyFetch}});
       if(!alive)return;
       setClient(supabase);
       const apply=async(next:any)=>{
