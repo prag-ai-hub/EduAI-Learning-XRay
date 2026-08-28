@@ -283,12 +283,16 @@ function TeacherAuth({client,session,needsProfile,error,onProfile}:{client:any;s
     const email=String(data.get("email")||"").trim().toLowerCase();
     const password=String(data.get("password")||"");
     setBusy(true);setMessage("");
-    const result=mode==="signup"
-      ? await client.auth.signUp({email,password,options:{emailRedirectTo:`${location.origin}/app`}})
-      : await client.auth.signInWithPassword({email,password});
-    setBusy(false);
-    if(result.error)setMessage(result.error.message);
-    else if(mode==="signup"&&!result.data.session)setMessage("Check your email to confirm your account, then return here to log in.");
+    try{
+      const result=await Promise.race([
+        mode==="signup"
+          ? client.auth.signUp({email,password,options:{emailRedirectTo:`${location.origin}/app`}})
+          : client.auth.signInWithPassword({email,password}),
+        new Promise<never>((_,reject)=>window.setTimeout(()=>reject(new Error("Sign-in is taking longer than expected. Please check your connection and try again.")),15000))
+      ]);
+      if(result.error)setMessage(result.error.message);
+      else if(mode==="signup"&&!result.data.session)setMessage("Check your email to confirm your account, then return here to log in.");
+    }catch(cause){setMessage(cause instanceof Error?cause.message:"Unable to sign in right now. Please try again.")}finally{setBusy(false)}
   };
   const oauth=async(provider:"google"|"azure")=>{
     if(!client)return;setMessage("");
