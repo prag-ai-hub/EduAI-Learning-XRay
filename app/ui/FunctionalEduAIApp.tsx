@@ -169,7 +169,12 @@ export default function FunctionalEduAIApp(){
       const response=await fetch("/api/auth/config",{cache:"no-store"});
       const config=await response.json();
       if(!response.ok)throw new Error(config.error||"Authentication is unavailable.");
-      const supabase=createClient(config.url,config.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+      // The browser's Web Locks API can leave Supabase auth waiting forever when
+      // another tab is suspended while holding the shared auth lock. Keep auth
+      // operations independent in this isolated test site so sign-in and saved
+      // session restoration cannot be blocked by another open HPC tab.
+      const authLock=async <T,>(_name:string,_acquireTimeout:number,fn:()=>Promise<T>)=>fn();
+      const supabase=createClient(config.url,config.publishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,lock:authLock}});
       if(!alive)return;
       setClient(supabase);
       const apply=async(next:any)=>{
