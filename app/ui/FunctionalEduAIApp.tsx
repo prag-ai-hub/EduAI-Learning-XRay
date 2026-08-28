@@ -164,7 +164,7 @@ export default function FunctionalEduAIApp(){
   const [loading,setLoading]=useState(true);
   const [authError,setAuthError]=useState("");
 
-  useEffect(()=>{let alive=true;let unsubscribe:(()=>void)|undefined;void(async()=>{
+  useEffect(()=>{let alive=true;let unsubscribe:(()=>void)|undefined;const bootstrapTimer=window.setTimeout(()=>{if(alive){setAuthError("The saved session check timed out. Please sign in again below.");setLoading(false)}},12000);void(async()=>{
     try{
       const response=await fetch("/api/auth/config",{cache:"no-store"});
       const config=await response.json();
@@ -186,7 +186,6 @@ export default function FunctionalEduAIApp(){
         }else{setProfile(null);setNeedsProfile(true)}
         setLoading(false);
       };
-      const {data}=await supabase.auth.getSession();
       const recoverAuthError=async(error:unknown)=>{
         const message=error instanceof Error?error.message:"Authentication failed.";
         if(/jwt issued at future/i.test(message)){
@@ -197,11 +196,13 @@ export default function FunctionalEduAIApp(){
         }else setAuthError(message);
         setLoading(false);
       };
-      await apply(data.session).catch(recoverAuthError);
       const {data:subscription}=supabase.auth.onAuthStateChange((_event:any,next:any)=>{void apply(next).catch(error=>{void recoverAuthError(error)})});
       unsubscribe=()=>subscription.subscription.unsubscribe();
-    }catch(error){if(alive){setAuthError(error instanceof Error?error.message:"Authentication failed.");setLoading(false)}}
-  })();return()=>{alive=false;unsubscribe?.()}},[]);
+      const {data}=await supabase.auth.getSession();
+      await apply(data.session).catch(recoverAuthError);
+      window.clearTimeout(bootstrapTimer);
+    }catch(error){if(alive){setAuthError(error instanceof Error?error.message:"Authentication failed.");setLoading(false)}window.clearTimeout(bootstrapTimer)}
+  })();return()=>{alive=false;window.clearTimeout(bootstrapTimer);unsubscribe?.()}},[]);
 
   if(loading)return <div className="app-loading"><img src="/brand/logo.png" alt="EduAI Hub"/><b>Preparing your secure workspace…</b></div>;
   if(!session||needsProfile||!profile)return <TeacherAuth client={client} session={session} needsProfile={needsProfile} error={authError} onProfile={next=>{setProfile(next);setNeedsProfile(false)}}/>;
