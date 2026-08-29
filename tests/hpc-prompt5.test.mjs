@@ -17,6 +17,8 @@ test("annual finalization validates mandatory evidence and teacher approval",()=
   for(const check of ["stage_sections","teacher_assessment","student_reflection","peer_feedback","parent_feedback","applied_learning","official_scoring","evidence_mapping","conflicts","teacher_approval"])assert.ok(api.includes(check),`missing ${check}`);
   assert.match(api,/review_status","approved/);
   assert.match(api,/SHA-256/);
+  assert.match(api,/finalizedApplied/);
+  assert.match(api,/Finalize the official rubric for a completed project or inquiry/);
 });
 
 test("principal reporting is aggregate, contextual and non-ranked",()=>{
@@ -33,4 +35,5 @@ test("Prompt 5 UI exposes finalization checks and validates PDF signature",()=>{
   assert.match(ui,/Academic X-Ray marks remain separate/);
   assert.match(ui,/foundation\?\.enabled\?<><HpcLearnerProfiles/);
   assert.match(ui,/All Academic X-Ray workflows continue unchanged/);
+  assert.match(ui,/Copy secure parent link/);
 });

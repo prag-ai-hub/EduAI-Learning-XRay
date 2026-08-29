@@ -33,12 +33,21 @@ function validate(c:any,teacherApproval:boolean){
   const conflicts=[...levelMap.values()].filter(levels=>levels.size>1).length;
   const requiredSections=(c.template?.hpc_template_sections||[]).filter((x:any)=>x.required);
   const requiredPerspective=(key:string)=>requiredSections.some((s:any)=>s.configuration_json?.required_perspectives?.includes?.(key))||c.stageCode==="middle";
+  const completedApplied=c.applied.filter((x:any)=>x.completion_status==="completed");
+  const finalizedApplied=completedApplied.filter((x:any)=>{
+    const reviews=Array.isArray(x.hpc_applied_learning_final_assessments)?x.hpc_applied_learning_final_assessments:[];
+    return reviews.some((review:any)=>review.assessment_status==="finalized"&&Boolean(review.scoring_basis)&&Number(review.maximum_score)>0);
+  });
+  const teacherAssessmentPassed=c.stageCode==="secondary"
+    ? finalizedApplied.some((x:any)=>Boolean(String(x.teacher_assessment||"").trim()))
+    : sources.has("teacher_observation")&&c.assessments.some((x:any)=>x.perspective==="teacher");
+  const officialScoringPassed=c.stageCode==="secondary"?finalizedApplied.length>0:Boolean(c.rule)&&c.assessments.length>0;
   const checks:Check[]=[
     {code:"stage_sections",label:"Mandatory stage sections",passed:Boolean(c.template)&&requiredSections.length>0,detail:c.template?`${requiredSections.length} required section(s) resolved from ${c.template.title}.`:"No active stage template."},
-    {code:"teacher_assessment",label:"Teacher assessment",passed:sources.has("teacher_observation")&&c.assessments.some((x:any)=>x.perspective==="teacher"),detail:"Approved observation and official ability assessment required."},
+    {code:"teacher_assessment",label:"Teacher assessment",passed:teacherAssessmentPassed,detail:c.stageCode==="secondary"?"A completed applied-learning record needs a teacher assessment and finalized rubric.":"Approved observation and official ability assessment required."},
     ...["student_reflection","peer_feedback","parent_feedback"].map(source=>({code:source,label:sourceLabels[source],passed:!requiredPerspective(source)||sources.has(source),detail:requiredPerspective(source)?"Required for this stage.":"Not mandatory for this stage."})),
-    {code:"applied_learning",label:"Mandatory applied learning",passed:c.stageCode!=="secondary"||c.applied.some((x:any)=>x.completion_status==="completed"),detail:c.stageCode==="secondary"?"At least one completed applied-learning record is required.":"Not mandatory for this stage."},
-    {code:"official_scoring",label:"Official scoring",passed:Boolean(c.rule)&&c.assessments.length>0,detail:c.rule?`Approved rule: ${c.rule.rule_code}.`:"No approved scoring rule."},
+    {code:"applied_learning",label:"Mandatory applied learning",passed:c.stageCode!=="secondary"||completedApplied.length>0,detail:c.stageCode==="secondary"?"At least one completed applied-learning record is required.":"Not mandatory for this stage."},
+    {code:"official_scoring",label:"Official scoring",passed:officialScoringPassed,detail:c.stageCode==="secondary"?(officialScoringPassed?`${finalizedApplied.length} finalized applied-learning rubric(s) resolved.`:"Finalize the official rubric for a completed project or inquiry."):(c.rule?`Approved rule: ${c.rule.rule_code}.`:"No approved scoring rule.")},
     {code:"evidence_mapping",label:"Evidence mappings",passed:c.evidence.length>0&&c.evidence.every((x:any)=>c.mappings.some((m:any)=>m.evidence_id===x.id)),detail:"Every approved evidence item must be mapped."},
     {code:"conflicts",label:"Unresolved conflicts",passed:conflicts===0,detail:conflicts?`${conflicts} ability conflict(s) require resolution.`:"No unresolved ability-level conflicts."},
     {code:"teacher_approval",label:"Teacher approval",passed:teacherApproval,detail:teacherApproval?"Teacher attestation recorded.":"Teacher must attest before finalization."}
