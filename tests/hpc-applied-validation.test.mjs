@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {isSecondaryGrade,validateAppliedNumbers} from '../lib/hpc-applied-validation.ts';
+test('record editor cannot retain fields from a previously selected record',()=>{
+ const source=fs.readFileSync(new URL('../app/ui/FunctionalEduAIApp.tsx',import.meta.url),'utf8');
+ assert.ok(source.includes('const record=detail?.record?.id===recordId?detail.record:null'));
+ assert.ok(source.includes('<form key={record.id} className="hpc-subform"'));
+});
 test('applied learning allows only integer Secondary grades',()=>{
  for(const grade of [9,10,11,12])assert.equal(isSecondaryGrade(grade),true);
  for(const grade of [null,undefined,0,8,13,9.5,'10',NaN])assert.equal(isSecondaryGrade(grade),false);
