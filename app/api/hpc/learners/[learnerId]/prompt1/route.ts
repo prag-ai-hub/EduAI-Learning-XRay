@@ -33,13 +33,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ lear
   const { data: learner, error } = await learnerForSchool(learnerId, profile.school_id);
   if (error) return Response.json({ error: error.message }, { status: 500 });
   if (!learner) return Response.json({ error: "HPC learner profile not found." }, { status: 404 });
-  const [{ data: goals, error: goalsError }, { data: mappings, error: mappingsError }, { data: framework }] = await Promise.all([
+  const stageResult = learner.grade !== null ? await db.from("hpc_stage_templates").select("framework_version_id,stage_code,title,grade_from,grade_to,hpc_template_sections(section_code,title,required,configuration_json),hpc_framework_versions!inner(status)").eq("hpc_framework_versions.status","approved").eq("is_active",true).lte("grade_from",learner.grade).gte("grade_to",learner.grade).order("created_at",{ascending:false}).limit(1).maybeSingle() : {data:null,error:null};
+  if(stageResult.error)return Response.json({error:stageResult.error.message},{status:500});
+  const framework=stageResult.data?{id:stageResult.data.framework_version_id}:null;
+  const [{ data: goals, error: goalsError }, { data: mappings, error: mappingsError }] = await Promise.all([
     db.from("hpc_goals_aspirations").select("id,goal_type,content,source_type,approval_status,created_at").eq("learner_profile_id", learner.id).order("created_at", { ascending: false }),
     db.from("hpc_competency_mappings").select("id,mapping_note,mapping_status,created_at,hpc_domains(label,code),hpc_curricular_goals(code,label),hpc_competencies(code,label),hpc_learning_outcomes(code,label),hpc_abilities(label)").eq("learner_profile_id", learner.id).order("created_at", { ascending: false }),
-    db.from("hpc_framework_versions").select("id").eq("status", "approved").order("source_published_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
   if (goalsError || mappingsError) return Response.json({ error: goalsError?.message || mappingsError?.message || "Unable to load Prompt 1 records." }, { status: 500 });
-  const stageResult = framework && learner.grade !== null ? await db.from("hpc_stage_templates").select("stage_code,title,grade_from,grade_to,hpc_template_sections(section_code,title,required,configuration_json)").eq("framework_version_id", framework.id).eq("is_active", true).lte("grade_from", learner.grade).gte("grade_to", learner.grade).maybeSingle() : { data: null };
   const { data: catalogue, error: catalogueError } = framework ? await db.from("hpc_domains").select("id,code,label,hpc_curricular_goals(id,code,label,hpc_competencies(id,code,label,hpc_learning_outcomes(id,code,label)))").eq("framework_version_id", framework.id).order("label") : { data: [], error: null };
   if (catalogueError) return Response.json({ error: catalogueError.message }, { status: 500 });
   return Response.json({ learner, goals: goals || [], mappings: mappings || [], stage: stageResult.data || null, catalogue: catalogue || [] });

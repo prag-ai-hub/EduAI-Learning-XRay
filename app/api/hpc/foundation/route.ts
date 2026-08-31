@@ -14,7 +14,9 @@ export async function GET(request: Request) {
   if (settingsError || frameworksError) {
     return Response.json({ error: settingsError?.message || frameworksError?.message || "Unable to load Holistic Progress foundation." }, { status: 500 });
   }
-  const framework = frameworks?.[0];
+  // This overview explicitly presents the Middle Stage library, not the newest
+  // framework from an unrelated stage.
+  const framework = frameworks?.find(item=>item.framework_code==="PARAKH_HPC_MIDDLE_STAGE");
   const [sectionsResult, abilitiesResult, levelsResult, domainsResult] = framework ? await Promise.all([
     db.from("hpc_stage_templates").select("id,hpc_template_sections(section_code,title,sort_order,required)").eq("framework_version_id", framework.id).eq("stage_code", "middle").maybeSingle(),
     db.from("hpc_abilities").select("id,code,label").eq("framework_version_id", framework.id).order("label"),

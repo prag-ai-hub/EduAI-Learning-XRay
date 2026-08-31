@@ -282,7 +282,7 @@ function WorkspaceApp({profile,onSignOut}:{profile:DemoProfile;onSignOut:()=>Pro
         }
       </div>
     </main>
-    <nav className="mobile-nav">{nav.slice(0,5).map(item=><button key={item} className={module===item?"active":""} onClick={()=>setModule(item)}><span className="nav-icon">{icon(item)}</span><small>{item}</small></button>)}</nav>
+    <nav className="mobile-nav" aria-label="All workspace sections (scroll for more)">{nav.map(item=><button key={item} className={module===item?"active":""} onClick={()=>setModule(item)}><span className="nav-icon">{icon(item)}</span><small>{item}</small></button>)}</nav>
     {toast&&<div className={`toast ${toast.kind}`} role="status"><b>{toast.kind==="error"?"!":"✓"}</b>{toast.text}</div>}
     {dialog&&<AppDialog type={dialog} close={()=>setDialog(null)} open={setDialog} state={state} setState={setState} selected={selected} update={updateAssessment} notify={notify} resetDemo={resetDemo} openAssessment={openAssessment}/>}
   </div>
@@ -292,6 +292,7 @@ function TeacherAuth({client,session,needsProfile,error,onProfile}:{client:any;s
   const [mode,setMode]=useState<"login"|"signup">("login");
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState(error);
+  useEffect(()=>{if(error)setMessage(error)},[error]);
   const submitAuth=async(event:FormEvent<HTMLFormElement>)=>{
     event.preventDefault();if(!client)return;
     const data=new FormData(event.currentTarget);
@@ -310,9 +311,16 @@ function TeacherAuth({client,session,needsProfile,error,onProfile}:{client:any;s
     }catch(cause){setMessage(cause instanceof Error?cause.message:"Unable to sign in right now. Please try again.")}finally{setBusy(false)}
   };
   const oauth=async(provider:"google"|"azure")=>{
-    if(!client)return;setMessage("");
-    const {error:oauthError}=await client.auth.signInWithOAuth({provider,options:{redirectTo:`${location.origin}/app`,...(provider==="azure"?{scopes:"email"}:{})}});
-    if(oauthError)setMessage(oauthError.message);
+    if(!client||busy)return;setBusy(true);setMessage("");
+    try{
+      const response=await fetch("/api/auth/proxy?path=settings",{cache:"no-store",signal:AbortSignal.timeout(10000)});
+      if(!response.ok)throw new Error("Unable to check sign-in availability. Please try again shortly.");
+      const settings=await response.json();
+      if(settings.external?.[provider]!==true)throw new Error(`${provider==="google"?"Google":"Microsoft"} sign-in has not been enabled for this site yet. Please use email and password, or contact your administrator.`);
+      const {error:oauthError}=await client.auth.signInWithOAuth({provider,options:{redirectTo:`${location.origin}/app`,...(provider==="azure"?{scopes:"email"}:{})}});
+      if(oauthError)throw oauthError;
+    }catch(cause){setMessage(cause instanceof Error?cause.message:"Unable to start social sign-in. Please try again.")}
+    finally{setBusy(false)}
   };
   const saveProfile=async(event:FormEvent<HTMLFormElement>)=>{
     event.preventDefault();const data=new FormData(event.currentTarget);setBusy(true);setMessage("");
