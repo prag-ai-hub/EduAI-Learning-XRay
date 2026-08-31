@@ -3,7 +3,7 @@ import { getSupabaseServer } from "../../../../../../lib/supabase-server";
 
 type PromptOneBody = {
   action?: "context" | "goal" | "mapping";
-  attendancePercentage?: number | null;
+  attendancePercentage?: number | string | null;
   lowAttendanceReason?: string;
   learnerContext?: string;
   homeResources?: string;
