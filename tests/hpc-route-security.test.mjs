@@ -11,7 +11,7 @@ function database(tables){
   let filters=[],single=false,operation='',value;
   const q={lte(k,v){filters.push(r=>r[k]<=v);return q},gte(k,v){filters.push(r=>r[k]>=v);return q},select(){return q},order(){return q},limit(){return q},eq(k,v){filters.push(r=>r[k]===v);return q},is(k,v){filters.push(r=>(r[k]??null)===v);return q},in(k,v){filters.push(r=>v.includes(r[k]));return q},maybeSingle(){single=true;return q},single(){single=true;return q},insert(v){operation='insert';value=v;return q},update(v){operation='update';value=v;return q},upsert(v){operation='upsert';value=v;return q},then(resolve,reject){
    let rows=(tables[table]||[]).filter(r=>filters.every(f=>f(r)));
-   if(operation){writes.push({table,operation,value});rows=(Array.isArray(value)?value:[value]).map((v,i)=>({id:`saved-${i}`,...v}));}
+   if(operation){writes.push({table,operation,value});rows=operation==='update'?rows.map(r=>({...r,...value})):(Array.isArray(value)?value:[value]).map((v,i)=>({id:`saved-${i}`,...v}));}
    return Promise.resolve({data:single?rows[0]||null:rows,error:null,count:rows.length}).then(resolve,reject);
   }};return q;
  }};
@@ -22,6 +22,18 @@ function moduleAt(path,dependencies){
  const exports={};new Function('require','exports','process',js)(name=>{for(const [suffix,value]of Object.entries(dependencies))if(name.endsWith(suffix))return value;throw Error(`Unexpected dependency ${name}`)},exports,dependencies.process||process);return exports;
 }
 const profile={id:'teacher',school_id:'school',role:'Teacher',status:'Active'};
+
+for(const [kind,table,status]of [['barriers','hpc_applied_learning_barriers','resolved'],['milestones','hpc_applied_learning_milestones','completed']]){
+ test(`${kind} status changes are scoped to the authorized parent record`,async()=>{
+  const db=database({hpc_applied_learning_records:[{id:'mine',school_id:'school'},{id:'foreign',school_id:'other'}],[table]:[{id:'item',applied_learning_record_id:'mine',status:'planned'},{id:'unrelated',applied_learning_record_id:'different',status:'planned'}]});
+  const route=moduleAt(`../app/api/hpc/applied-learning/[recordId]/${kind}/route.ts`,{'authorization':{getAuthorizedProfile:async()=>profile},'supabase-server':{getSupabaseServer:()=>db}});
+  const call=(recordId,body)=>route.PATCH(request(kind,body),{params:Promise.resolve({recordId})});
+  const saved=await call('mine',{id:'item',status});assert.equal(saved.status,200);assert.equal((await saved.json()).item.status,status);
+  assert.equal((await call('mine',{id:'item',status:'invented'})).status,400);
+  assert.equal((await call('mine',{id:'unrelated',status})).status,404);
+  const count=db.writes.length;assert.equal((await call('foreign',{id:'item',status})).status,404);assert.equal(db.writes.length,count);
+ });
+}
 test('portfolio download uses recorded uploader and preserves bytes',async()=>{
  const db=database({hpc_evidence:[{id:'e',school_id:'school',contributor_user_id:'uploader',attachment_reference:JSON.stringify({fileId:'file',fileName:'sample.txt'})}]});
  let requested;db.storage={from:()=>({download:async path=>{requested=path;return {data:new Blob(['synthetic portfolio'],{type:'text/plain'}),error:null}}})};

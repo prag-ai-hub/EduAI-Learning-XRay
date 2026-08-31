@@ -1,5 +1,6 @@
 import { getAuthorizedProfile } from "../../../../../lib/authorization";
 import { getSupabaseServer } from "../../../../../lib/supabase-server";
+import { isSecondaryGrade, validateAppliedNumbers } from "../../../../../lib/hpc-applied-validation";
 
 const allowedTypes=["group_project","problem_inquiry","classroom_interaction","online_course","community_skill"];
 const allowedStatuses=["planned","in_progress","completed"];
@@ -27,6 +28,7 @@ export async function PATCH(request:Request,{params}:{params:Promise<{recordId:s
   const {recordId}=await params,found=await ownedRecord(request,recordId); if(found instanceof Response)return found;
   const body=await request.json() as Record<string,unknown>,type=String(body.recordType||found.record.record_type),status=String(body.completionStatus||found.record.completion_status),title=String(body.title||"").trim();
   if(!allowedTypes.includes(type)||title.length<3||!allowedStatuses.includes(status))return Response.json({error:"Enter a valid title, record type, and completion status."},{status:400});
+  const validation=validateAppliedNumbers(body);if(validation)return Response.json({error:validation},{status:400});
   const number=(value:unknown)=>value===""||value===null||value===undefined?null:Number(value);
   const {data,error}=await getSupabaseServer().from("hpc_applied_learning_records").update({
     record_type:type,title,prompt_text:String(body.promptText||"").trim()||null,interaction_type:String(body.interactionType||"").trim()||null,
