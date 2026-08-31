@@ -1,0 +1,11 @@
+"use client";
+import {useEffect,useState} from "react";
+type Action={id:string;title:string;action_plan:string;review_date:string|null;status:string};
+export default function HpcInterventionLinks({request}:{request:typeof fetch}){
+ const [items,setItems]=useState<Action[]>([]),[enabled,setEnabled]=useState(false),[error,setError]=useState(""),[busy,setBusy]=useState("");
+ const load=async()=>{const r=await request("/api/hpc/support-actions");const p=await r.json();if(!r.ok)throw Error(p.error||"Unable to load HPC support actions.");setItems(p.actions||[])};
+ useEffect(()=>{let active=true;void request("/api/hpc/foundation").then(r=>r.json()).then(async p=>{if(!active||!p.enabled)return;setEnabled(true);await load()}).catch(()=>{if(active)setError("Unable to load HPC support actions. Reopen Interventions to retry.")});return()=>{active=false}},[]);
+ const update=async(id:string,status:string)=>{setBusy(id);setError("");try{const r=await request("/api/hpc/support-actions",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,status})});const p=await r.json();if(!r.ok)throw Error(p.error);await load()}catch(e){setError(e instanceof Error?e.message:"Unable to update support action.")}finally{setBusy("")}};
+ if(!enabled&&!error)return null;
+ return <section className="card span-2"><p className="eyebrow">Holistic HPC · linked support</p><h2>HPC support actions</h2><p>These are your existing HPC actions, separate from academic marks. Changes here also appear in Holistic Progress.</p>{error&&<p role="alert" className="form-error">{error}</p>}{!items.length&&<p>No HPC support actions created by you yet.</p>}{items.map(item=><article key={item.id} className="hpc-subform"><h3>{item.title}</h3><p>{item.action_plan}</p><p>Status: {item.status} · Review: {item.review_date||"Not scheduled"}</p><div className="button-row">{item.status==="planned"&&<button className="secondary" disabled={busy===item.id} onClick={()=>void update(item.id,"active")}>Start HPC support</button>}{item.status!=="completed"&&<button className="primary" disabled={busy===item.id} onClick={()=>void update(item.id,"completed")}>Complete HPC support</button>}</div></article>)}</section>;
+}

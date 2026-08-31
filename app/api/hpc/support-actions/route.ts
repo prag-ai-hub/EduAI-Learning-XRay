@@ -4,10 +4,11 @@ import { getSupabaseServer } from "../../../../lib/supabase-server";
 export async function GET(request: Request) {
   const profile = await getAuthorizedProfile(request); if (profile instanceof Response) return profile;
   const learnerId = new URL(request.url).searchParams.get("learnerId") || "";
-  if (!learnerId) return Response.json({ error: "Choose a learner." }, { status: 400 });
-  const { data, error } = await getSupabaseServer().from("hpc_holistic_support_actions")
+  let query = getSupabaseServer().from("hpc_holistic_support_actions")
     .select("id,title,action_plan,review_date,status,source_type,ability_id,evidence_id,learning_xray_intervention_id,hpc_abilities(label),hpc_evidence(source_type,content)")
-    .eq("school_id", profile.school_id).eq("learner_profile_id", learnerId).order("created_at", { ascending: false });
+    .eq("school_id", profile.school_id);
+  query=learnerId?query.eq("learner_profile_id",learnerId):query.eq("created_by",profile.id);
+  const {data,error}=await query.order("created_at", { ascending: false });
   if (error) return Response.json({ error: error.message }, { status: 500 });
   return Response.json({ actions: data || [] });
 }

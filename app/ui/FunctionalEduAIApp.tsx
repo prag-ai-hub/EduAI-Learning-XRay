@@ -6,6 +6,8 @@ import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import { zipSync } from "fflate";
 import ParentShareDialog from "./ParentShareDialog";
+import HpcInterventionLinks from "./HpcInterventionLinks";
+import HpcBulkObservations from "./HpcBulkObservations";
 
 type Role = "Teacher" | "Admin" | "Principal" | "School admin" | "Platform admin";
 type TeacherModule = "Home" | "Work" | "Review" | "X-Ray" | "Holistic Progress" | "Interventions" | "Students" | "Resources" | "Achievements" | "Reports" | "Settings";
@@ -414,6 +416,7 @@ function HolisticProgress({profile,state}:{profile:DemoProfile;state:DemoState})
     <HpcEvidenceReview />
     <HpcActivityMapping />
     <HpcPromptTwoForms />
+    <HpcBulkObservations request={authFetch}/>
     <HpcMultiPerspectiveEvidence />
     <HpcEvidenceMapping />
     <HpcEvidenceDashboard />
@@ -787,7 +790,7 @@ function Interventions({state,setState,open,notify}:any){
   const completedCount=state.interventions.filter((i:Intervention)=>i.status==="Completed").length;
   const followupRate=state.interventions.length?Math.round((completedCount/state.interventions.length)*100):0;
   return <><PageHead eyebrow="Improvement cycle" title="Interventions & follow-up" subtitle="Temporary, concept-specific support linked to measurable evidence."><button className="primary" onClick={()=>open("intervention-form")}>＋ Create intervention</button><button className="secondary" onClick={()=>open("worksheet")}>Generate worksheet</button></PageHead>
-  <div className="dashboard-grid">{state.interventions.map((i:any)=>{const evidence=concepts.find(c=>c.concept===i.concept);return <section className="card" key={i.id}><span className={`status ${i.status==="Completed"?"success":"warning"}`}>{i.status}</span><p className="eyebrow">Temporary group · Strengthen</p><h2>{i.concept}</h2><p>{i.format} · {i.duration} · {evidence?`${evidence.evidence} evidence point${evidence.evidence===1?"":"s"}`:"No graded evidence yet"}</p><p>Follow-up: {i.followup}</p>{i.followupRecorded&&i.followupEvidence&&<p className="modal-copy">Recorded outcome: {i.followupEvidence.outcome} · {i.followupEvidence.studentsCompleted} students · {i.followupEvidence.avgMastery}% avg mastery</p>}<div className="button-row"><button className="secondary" onClick={()=>open(`group:${i.assessmentId}:${encodeURIComponent(i.concept)}`)}>Review group</button>{i.status!=="Completed"?<button className="primary" onClick={()=>complete(i.id)}>Mark complete</button>:<button className="primary" onClick={()=>open(`followup:${i.id}`)}>{i.followupRecorded?"Follow-up recorded ✓":"Record follow-up"}</button>}</div></section>})}
+  <div className="dashboard-grid"><HpcInterventionLinks request={authFetch}/>{state.interventions.map((i:any)=>{const evidence=concepts.find(c=>c.concept===i.concept);return <section className="card" key={i.id}><span className={`status ${i.status==="Completed"?"success":"warning"}`}>{i.status}</span><p className="eyebrow">Temporary group · Strengthen</p><h2>{i.concept}</h2><p>{i.format} · {i.duration} · {evidence?`${evidence.evidence} evidence point${evidence.evidence===1?"":"s"}`:"No graded evidence yet"}</p><p>Follow-up: {i.followup}</p>{i.followupRecorded&&i.followupEvidence&&<p className="modal-copy">Recorded outcome: {i.followupEvidence.outcome} · {i.followupEvidence.studentsCompleted} students · {i.followupEvidence.avgMastery}% avg mastery</p>}<div className="button-row"><button className="secondary" onClick={()=>open(`group:${i.assessmentId}:${encodeURIComponent(i.concept)}`)}>Review group</button>{i.status!=="Completed"?<button className="primary" onClick={()=>complete(i.id)}>Mark complete</button>:<button className="primary" onClick={()=>open(`followup:${i.id}`)}>{i.followupRecorded?"Follow-up recorded ✓":"Record follow-up"}</button>}</div></section>})}
   <section className="card"><p className="eyebrow">Resource studio</p><h2>Generate teacher-approved materials</h2><p>Worksheets, exit tickets, guided examples and answer keys remain drafts until approval.</p><button className="primary" onClick={()=>open("worksheet")}>Generate resource</button></section>
   <section className="card span-2"><CardHead eyebrow="Progress tracking" title="Concept mastery from graded evidence"/>{concepts.length?<div className="quality-bars">{concepts.slice(0,3).map(c=><Bar key={c.concept} label={c.concept} pct={c.mastery}/>)}<Bar label="Intervention follow-up completion" pct={followupRate}/></div>:<p className="modal-copy">No graded evidence yet — grade answer sheets to see real concept mastery here.</p>}</section></div></>;
 }

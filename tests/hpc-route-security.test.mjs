@@ -9,7 +9,7 @@ function database(tables){
  const writes=[];
  return {writes,from(table){
   let filters=[],single=false,operation='',value;
-  const q={select(){return q},order(){return q},limit(){return q},eq(k,v){filters.push(r=>r[k]===v);return q},is(k,v){filters.push(r=>(r[k]??null)===v);return q},in(k,v){filters.push(r=>v.includes(r[k]));return q},maybeSingle(){single=true;return q},single(){single=true;return q},insert(v){operation='insert';value=v;return q},update(v){operation='update';value=v;return q},upsert(v){operation='upsert';value=v;return q},then(resolve,reject){
+  const q={lte(k,v){filters.push(r=>r[k]<=v);return q},gte(k,v){filters.push(r=>r[k]>=v);return q},select(){return q},order(){return q},limit(){return q},eq(k,v){filters.push(r=>r[k]===v);return q},is(k,v){filters.push(r=>(r[k]??null)===v);return q},in(k,v){filters.push(r=>v.includes(r[k]));return q},maybeSingle(){single=true;return q},single(){single=true;return q},insert(v){operation='insert';value=v;return q},update(v){operation='update';value=v;return q},upsert(v){operation='upsert';value=v;return q},then(resolve,reject){
    let rows=(tables[table]||[]).filter(r=>filters.every(f=>f(r)));
    if(operation){writes.push({table,operation,value});rows=(Array.isArray(value)?value:[value]).map((v,i)=>({id:`saved-${i}`,...v}));}
    return Promise.resolve({data:single?rows[0]||null:rows,error:null,count:rows.length}).then(resolve,reject);
@@ -46,6 +46,24 @@ test('course proof rejects negative hours and retains zero',async()=>{
  for(const hours of [-1,0]){const response=await route.POST(request('proof',{providerName:'Synthetic',courseName:'Test course',proofReference:'{}',completionStatus:'in_progress',hoursCompleted:hours}),{params:Promise.resolve({recordId:'r'})});assert.equal(response.status,hours<0?400:200);if(hours===0)assert.equal((await response.json()).proof.hours_completed,0)}
 });
 const request=(path,body)=>new Request(`https://hpc.invalid/api/hpc/${path}`,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});
+test('bulk observations keep individual values and stable IDs on retries',async()=>{
+ const db=database({hpc_learner_profiles:[{id:'l1',school_id:'school',grade:7,academic_year:'2026-27'},{id:'l2',school_id:'school',grade:8,academic_year:'2026-27'}],hpc_stage_templates:[{framework_version_id:'fw',is_active:true,'hpc_framework_versions.status':'approved',grade_from:6,grade_to:8}]});
+ const route=moduleAt('../app/api/hpc/observations/bulk/route.ts',{'authorization':{getAuthorizedProfile:async()=>profile},'supabase-server':{getSupabaseServer:()=>db}});
+ const body={batchId:'11111111-1111-4111-a111-111111111111',entries:[{learnerId:'l1',note:'First synthetic observation',confidence:'high'},{learnerId:'l2',note:'Second synthetic observation',confidence:'low'}]};
+ for(let n=0;n<2;n++){const response=await route.POST(request('observations/bulk',body));assert.equal(response.status,200);assert.equal((await response.json()).results.length,2)}
+ const evidence=db.writes.filter(w=>w.table==='hpc_evidence');assert.equal(evidence[0].value.id,evidence[2].value.id);assert.equal(evidence[1].value.id,evidence[3].value.id);assert.notEqual(evidence[0].value.id,evidence[1].value.id);
+ assert.equal(evidence[0].value.review_status,'teacher_review_required');assert.equal(evidence[1].value.content,'Second synthetic observation');
+ const details=db.writes.filter(w=>w.table==='hpc_teacher_observations');assert.equal(details[0].value.confidence,'high');assert.equal(details[1].value.confidence,'low');
+});
+test('bulk invalid or foreign learners fail without writes',async()=>{
+ const db=database({});const route=moduleAt('../app/api/hpc/observations/bulk/route.ts',{'authorization':{getAuthorizedProfile:async()=>profile},'supabase-server':{getSupabaseServer:()=>db}});
+ for(const entries of [[null],[{learnerId:'foreign',note:'Test',confidence:'high'}]]){const r=await route.POST(request('observations/bulk',{batchId:'11111111-1111-4111-a111-111111111111',entries}));assert.ok([400,403].includes(r.status))}assert.equal(db.writes.length,0);
+});
+test('Interventions list contains only current teachers same-school actions',async()=>{
+ const db=database({hpc_holistic_support_actions:[{id:'mine',school_id:'school',created_by:'teacher'},{id:'other-teacher',school_id:'school',created_by:'other'},{id:'other-school',school_id:'elsewhere',created_by:'teacher'}]});
+ const route=moduleAt('../app/api/hpc/support-actions/route.ts',{'authorization':{getAuthorizedProfile:async()=>profile},'supabase-server':{getSupabaseServer:()=>db}});
+ const r=await route.GET(request('support-actions'));assert.deepEqual((await r.json()).actions.map(a=>a.id),['mine']);
+});
 test('contributor links reject tampered, expired and revoked tokens',async()=>{
  const secret='synthetic-test-secret-not-a-credential';
  const sign=async exp=>{const payload=Buffer.from(JSON.stringify({i:'link',exp})).toString('base64url');const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);return payload+'.'+Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(payload))).toString('base64url')};
