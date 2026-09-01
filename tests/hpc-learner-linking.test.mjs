@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {readFileSync} from 'node:fs';
 
 const route=readFileSync(new URL('../app/api/hpc/learners/route.ts',import.meta.url),'utf8');
@@ -19,4 +20,10 @@ test('learner form exposes existing student choice and broadcasts refreshed opti
 test('official progress discards stale responses after changing learner',()=>{
  assert.match(ui,/setProgress\(null\);setFeedback\(null\);setMessage\(""\)/);
  assert.match(ui,/if\(request!==requestId.current\)return/);
+});
+test('contribution links remain visible when clipboard access is unavailable',()=>{
+ const source=fs.readFileSync(new URL('../app/ui/FunctionalEduAIApp.tsx',import.meta.url),'utf8');
+ assert.ok(source.includes('Latest contribution link'));
+ assert.ok(source.includes('navigator.clipboard?.writeText(payload.url).catch(()=>undefined)'));
+ assert.ok(source.includes('readOnly value={shareUrl}'));
 });

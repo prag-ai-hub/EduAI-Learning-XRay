@@ -7,6 +7,12 @@ test('record editor cannot retain fields from a previously selected record',()=>
  assert.ok(source.includes('const record=detail?.record?.id===recordId?detail.record:null'));
  assert.ok(source.includes('<form key={record.id} className="hpc-subform"'));
 });
+test('bulk observations hide invalid class filters and isolate Middle performance levels',()=>{
+ const source=fs.readFileSync(new URL('../app/ui/HpcBulkObservations.tsx',import.meta.url),'utf8');
+ assert.ok(source.includes('learners.filter(l=>Number.isInteger(Number(l.grade)))'));
+ assert.ok(source.includes('"Grade not set"'));
+ assert.ok(source.includes('g>=6&&g<=8'));
+});
 test('applied learning allows only integer Secondary grades',()=>{
  for(const grade of [9,10,11,12])assert.equal(isSecondaryGrade(grade),true);
  for(const grade of [null,undefined,0,8,13,9.5,'10',NaN])assert.equal(isSecondaryGrade(grade),false);

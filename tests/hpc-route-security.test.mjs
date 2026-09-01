@@ -87,6 +87,20 @@ test('contributor links reject tampered, expired and revoked tokens',async()=>{
  }
  assert.equal(db.writes.length,0);
 });
+test('public contribution respects the school flag and learner stage framework',async()=>{
+ const secret='synthetic-test-secret-not-a-credential',payload=Buffer.from(JSON.stringify({i:'link',exp:Date.now()+60000})).toString('base64url');
+ const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+ const token=payload+'.'+Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(payload))).toString('base64url');
+ const base={hpc_share_links:[{id:'link',school_id:'school',learner_profile_id:'learner',contribution_type:'parent_feedback',expires_at:new Date(Date.now()+60000).toISOString(),revoked_at:null,submission_count:0,hpc_learner_profiles:{academic_year:'2026-27',grade:7,students:{name:'Synthetic'}}}],hpc_stage_templates:[{is_active:true,grade_from:6,grade_to:8,framework_version_id:'middle-framework'}]};
+ for(const enabled of [false,true]){
+  const db=database({...base,hpc_school_settings:[{school_id:'school',enabled}]});
+  const route=moduleAt('../app/api/hpc/shares/[token]/route.ts',{'supabase-server':{getSupabaseServer:()=>db},process:{env:{SUPABASE_SECRET_KEY:secret}}});
+  const response=await route.POST(request(`shares/${token}`,{content:'Synthetic parent feedback',contributorName:'Test Parent'}));
+  assert.equal(response.status,enabled?200:400);
+  const evidence=db.writes.find(w=>w.table==='hpc_evidence');
+  if(enabled)assert.equal(evidence.value.framework_version_id,'middle-framework');else assert.equal(evidence,undefined);
+ }
+});
 function auth(db,role='Teacher'){return moduleAt('../lib/authorization.ts',{'supabase-auth':{getAuthenticatedUser:async()=>({id:'teacher'}),unauthorized:()=>new Response(null,{status:401})},'supabase-server':{getSupabaseServer:()=>db}})}
 for(const role of ['Student','Parent','Unknown'])test(`HPC refuses ${role} role`,async()=>{
  const db=database({users:[{...profile,role}]});assert.equal((await auth(db).getAuthorizedProfile(request('learners'))).status,403);
