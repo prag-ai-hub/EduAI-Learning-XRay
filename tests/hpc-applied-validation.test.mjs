@@ -9,7 +9,8 @@ test('record editor cannot retain fields from a previously selected record',()=>
 });
 test('bulk observations hide invalid class filters and isolate Middle performance levels',()=>{
  const source=fs.readFileSync(new URL('../app/ui/HpcBulkObservations.tsx',import.meta.url),'utf8');
- assert.ok(source.includes('learners.filter(l=>Number.isInteger(Number(l.grade)))'));
+ assert.ok(source.includes('value!==null&&value!==undefined&&value!==""&&Number.isInteger(Number(value))'));
+ assert.ok(source.includes('learners.filter(l=>validGrade(l.grade))'));
  assert.ok(source.includes('"Grade not set"'));
  assert.ok(source.includes('g>=6&&g<=8'));
 });
