@@ -1,0 +1,22 @@
+.sync-indicator {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.sync-indicator.synced {
+  color: var(--green);
+}
+
+.sync-indicator.offline {
+  color: var(--orange);
+}
+
+@media (max-width: 760px) {
+  .sync-indicator {
+    max-width: 92px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
