@@ -18,6 +18,7 @@ test('mobile forms cannot widen the HPC workspace',()=>{
  const css=fs.readFileSync(new URL('../app/globals.css',import.meta.url),'utf8');
  assert.ok(css.includes('.form-grid>*,.form-grid label{min-width:0}'));
  assert.ok(css.includes('.form-grid input,.form-grid select,.form-grid textarea{width:100%;max-width:100%;min-width:0}'));
+ assert.ok(css.includes('@media(max-width:900px){.crumb span,.crumb i,.top-actions .sync-indicator,.top-actions .credit-badge,.top-actions .demo-role-badge{display:none}}'));
  assert.ok(css.includes('.top-actions .sync-indicator,.top-actions .credit-badge{display:none}'));
 });
 test('applied learning allows only integer Secondary grades',()=>{

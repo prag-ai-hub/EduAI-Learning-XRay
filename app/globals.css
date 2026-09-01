@@ -72,4 +72,5 @@
 html,body{max-width:100%;overflow-x:hidden}
 .form-grid>*,.form-grid label{min-width:0}
 .form-grid input,.form-grid select,.form-grid textarea{width:100%;max-width:100%;min-width:0}
+@media(max-width:900px){.crumb span,.crumb i,.top-actions .sync-indicator,.top-actions .credit-badge,.top-actions .demo-role-badge{display:none}}
 @media(max-width:560px){.top-actions .sync-indicator,.top-actions .credit-badge{display:none}.mobile-brand b{font-size:11px}.top-actions{gap:5px}.top-actions button{padding:0 8px}}
