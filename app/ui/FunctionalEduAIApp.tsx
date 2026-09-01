@@ -7,7 +7,15 @@ import html2canvas from "html2canvas";
 import { zipSync } from "fflate";
 import ParentShareDialog from "./ParentShareDialog";
 
-type Role = "Teacher" | "Admin" | "Principal" | "School admin" | "Platform admin";
+// Canonical roles are the four M7 values. The trailing strings are legacy
+// demo-only labels still referenced by the unreachable Principal/Platform views.
+type Role = "SuperAdmin" | "SchoolAdmin" | "Teacher" | "Parent" | "Principal" | "School admin" | "Platform admin";
+const CANONICAL_ROLES = ["SuperAdmin","SchoolAdmin","Teacher","Parent"];
+function toRole(value:unknown):Role{
+  const role = String(value || "");
+  if (role === "Admin") return "SchoolAdmin";   // pre-M7 value
+  return (CANONICAL_ROLES.includes(role) ? role : "Teacher") as Role;
+}
 type TeacherModule = "Home" | "Work" | "Review" | "X-Ray" | "Interventions" | "Students" | "Resources" | "Achievements" | "Reports" | "Settings";
 type AdminModule = "Overview" | "Users" | "Schools & Classes" | "Students" | "Academic years" | "Branding & Privacy" | "Schools" | "Analytics" | "AI Configuration" | "Feature flags" | "System health" | "Audit" | "Reports";
 type Stage = "draft" | "uploaded" | "setup" | "grading" | "review" | "approved" | "xray" | "intervention" | "followup" | "published";
@@ -180,7 +188,7 @@ export default function FunctionalEduAIApp(){
         const payload=await profileResponse.json();
         if(!profileResponse.ok)throw new Error(payload.error||"Could not load your profile.");
         if(payload.profile){
-          const accountRole:Role=payload.profile.role==="Admin"?"Admin":"Teacher";
+          const accountRole:Role=toRole(payload.profile.role);
           setProfile({id:payload.profile.id,name:payload.profile.name,email:payload.profile.email,role:accountRole,school:payload.profile.school,label:`${accountRole} account`});
           setNeedsProfile(false);
         }else{setProfile(null);setNeedsProfile(true)}
@@ -222,7 +230,7 @@ function WorkspaceApp({profile,onSignOut}:{profile:DemoProfile;onSignOut:()=>Pro
   useEffect(()=>{if(role!=="Admin")return;void authFetch("/api/admin/users",{cache:"no-store"}).then(async response=>{const payload=await response.json();if(!response.ok)throw new Error(payload.error);setState(s=>({...s,users:(payload.users||[]).map((u:any)=>({id:u.id,name:u.name||u.email,email:u.email,role:u.role,school:profile.school,phone:"",status:u.status==="Inactive"?"Inactive":u.status==="Invited"?"Invited":"Active",totalCredits:u.total_credits,usedCredits:u.used_credits}))}))}).catch(()=>{})},[role,profile.school]);
   if(!ready)return <div className="app-loading"><img src="/brand/logo.png" alt="EduAI Hub"/><b>Preparing your workspace…</b></div>;
 
-  const nav=role==="Teacher"?teacherNav:(role==="Admin"||role==="School admin")?["Overview","Users","Schools & Classes","Students","Academic years","Branding & Privacy","Reports"] as AdminModule[]:role==="Platform admin"?["Overview","Schools","Users","Analytics","AI Configuration","Feature flags","System health","Audit"] as AdminModule[]:["Overview","Reports"] as AdminModule[];
+  const nav=role==="Teacher"?teacherNav:(role==="SchoolAdmin"||role==="School admin")?["Overview","Users","Schools & Classes","Students","Academic years","Branding & Privacy","Reports"] as AdminModule[]:(role==="SuperAdmin"||role==="Platform admin")?["Overview","Schools","Users","Analytics","AI Configuration","Feature flags","System health","Audit"] as AdminModule[]:["Overview","Reports"] as AdminModule[];
   const initials=profile.name.split(/\s+/).map(x=>x[0]).join("").slice(0,2).toUpperCase();
   return <div className="app-shell functional-shell">
     <aside className="sidebar">
@@ -249,8 +257,10 @@ function WorkspaceApp({profile,onSignOut}:{profile:DemoProfile;onSignOut:()=>Pro
       <div className="content">
         {role==="Teacher"
           ? <TeacherApp profile={profile} module={module as TeacherModule} state={state} selected={selected} openAssessment={openAssessment} open={setDialog} notify={notify} update={updateAssessment} setState={setState}/>
-          : role==="Admin"||role==="School admin"
+          : role==="SchoolAdmin"||role==="School admin"
             ? <SchoolAdminApp module={module as AdminModule} state={state} setState={setState} open={setDialog} notify={notify}/>
+            : role==="Parent"
+            ? <ParentPending/>
             : role==="Principal"
               ? <PrincipalApp module={module as AdminModule} state={state} open={setDialog} notify={notify}/>
               : <PlatformApp module={module as AdminModule} state={state} open={setDialog} notify={notify}/>
@@ -290,7 +300,7 @@ function TeacherAuth({client,session,needsProfile,error,onProfile}:{client:any;s
     const response=await authFetch("/api/profile",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.fromEntries(data))});
     const payload=await response.json();setBusy(false);
     if(!response.ok){setMessage(payload.error||"Could not save your profile.");return}
-    const accountRole:Role=payload.profile.role==="Admin"?"Admin":"Teacher";onProfile({id:payload.profile.id,name:payload.profile.name,email:payload.profile.email,role:accountRole,school:payload.profile.school,label:`${accountRole} account`});
+    const accountRole:Role=toRole(payload.profile.role);onProfile({id:payload.profile.id,name:payload.profile.name,email:payload.profile.email,role:accountRole,school:payload.profile.school,label:`${accountRole} account`});
   };
   return <main className="demo-auth">
     <section className="demo-auth-story"><img src="/brand/logo.png" alt="EduAI Hub"/><p className="eyebrow">EduAI Learning X-Ray</p><h1>Your work, securely saved to your teacher account.</h1><p>Grade uploaded answer sheets, identify evidence-based learning gaps, and return later to continue exactly where you stopped.</p><ol><li><b>1</b><span>Sign in securely</span></li><li><b>2</b><span>Create or resume assessments</span></li><li><b>3</b><span>Review AI evidence before publishing</span></li></ol></section>
@@ -339,6 +349,11 @@ function DemoAccess({accounts,signIn,createTeacher}:{accounts:DemoProfile[];sign
       </div>
     </section>
   </main>;
+}
+
+function ParentPending(){
+  return <><PageHead eyebrow="Parent account" title="Your parent dashboard is not ready yet" subtitle="Your account is set up correctly. The dashboard that shows your children's reports is still being built."/>
+    <section className="card span-2"><p className="eyebrow">Coming soon</p><h2>Nothing to show here yet</h2><p>Once the parent dashboard is available you will see each linked child's learning-gap reports, study guides and practice worksheets. Your teacher can still share an individual report link with you in the meantime.</p></section></>;
 }
 
 function TeacherApp({profile,module,state,selected,openAssessment,open,notify,update,setState}:any){

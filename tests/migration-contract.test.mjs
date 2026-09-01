@@ -9,6 +9,10 @@ const executable = sql => sql.replace(/^\s*--.*$/gm, "");
 const m3 = read("20260812000000_credits_rbac_invitations.sql");
 const m5 = read("20260902000000_identity_uuid_unification.sql");
 const m6 = read("20260902000100_credit_function_repair.sql");
+const m7 = read("20260903000000_roles_and_school_status.sql");
+const m8 = read("20260903000100_parent_student_links.sql");
+const authz = readFileSync(new URL("../lib/authorization.ts", import.meta.url), "utf8");
+const appUi = readFileSync(new URL("../app/ui/FunctionalEduAIApp.tsx", import.meta.url), "utf8");
 const gradeRoute = readFileSync(new URL("../app/api/grade/route.ts", import.meta.url), "utf8");
 
 // ---------------------------------------------------------------- M5
@@ -132,4 +136,101 @@ test("no credit is charged before the provider key is known to exist", () => {
   assert.ok(keyCheck > -1 && charge > -1, "both the key check and the charge must exist");
   assert.ok(keyCheck < charge,
     "the provider-key check must run before consume_credit, or an early return leaks a credit");
+});
+
+// ---------------------------------------------------------------- M7
+
+test("M7 constrains the role vocabulary the database will accept", () => {
+  assert.match(m7, /check \(role in \('SuperAdmin','SchoolAdmin','Teacher','Parent'\)\)/);
+});
+
+test("M7 enforces the role/school invariant in the database, not in app code", () => {
+  assert.match(m7, /check \(\(role in \('SchoolAdmin','Teacher'\)\) = \(school_id is not null\)\)/);
+  assert.match(m7, /alter column school_id drop not null/);
+});
+
+test("M7 protects schoolless emails that the composite unique index no longer covers", () => {
+  // `unique (school_id, email)` stops protecting rows once school_id may be NULL,
+  // because NULLs compare as distinct.
+  assert.match(m7, /create unique index if not exists users_email_no_school_idx[\s\S]*where school_id is null/);
+});
+
+test("M7 clears school_id when promoting the seeded admin to SuperAdmin", () => {
+  // Promoting without clearing school_id would violate the invariant added in
+  // the same migration.
+  assert.match(m7, /set role = 'SuperAdmin', school_id = null/);
+});
+
+test("M7 refuses to guess at role values it does not recognise", () => {
+  assert.match(m7, /M7 preflight FAILED/);
+  assert.match(m7, /unmapped role value/);
+});
+
+test("M7 leaves existing schools Active rather than locking them out", () => {
+  assert.match(m7, /update public\.schools set status = 'Active'/);
+  assert.match(m7, /check \(status in \('Pending','Active','Suspended','Closed'\)\)/);
+});
+
+test("M7 gives the cross-tenant rule somewhere to live", () => {
+  assert.match(m7, /create table if not exists public\.support_access_grants/);
+  assert.match(m7, /check \(expires_at > created_at\)/);
+  assert.match(m7, /length\(btrim\(reason\)\) >= 10/);
+});
+
+// ---------------------------------------------------------------- M8
+
+test("M8 makes parent access an authorisation record, not a UI convention", () => {
+  assert.match(m8, /create table if not exists public\.parent_student_links/);
+  assert.match(m8, /unique \(parent_user_id, student_id\)/);
+});
+
+test("M8 stops a non-Parent account being linked as a parent", () => {
+  // A CHECK constraint cannot read another table, so this needs a trigger.
+  assert.match(m8, /create trigger parent_student_links_role_check/);
+  assert.match(m8, /expected Parent/);
+});
+
+test("M8 never lets the caller choose the student", () => {
+  // The student comes from the code, so nobody can attach themselves to a child
+  // they were not given access to.
+  assert.match(m8, /v_code\.student_id/);
+  assert.doesNotMatch(m8, /redeem_parent_invite_code\(\s*\n?\s*p_parent_user_id uuid,\s*\n\s*p_student_id/);
+});
+
+test("M8 checks an existing link BEFORE code exhaustion", () => {
+  // Regression: exhaustion was checked first, so a parent redeeming twice got
+  // 'This invite code has already been used' instead of their existing link.
+  const idempotent = m8.indexOf("Idempotency comes FIRST");
+  const exhaustion = m8.indexOf("v_code.used_count >= v_code.max_uses");
+  assert.ok(idempotent > -1 && exhaustion > -1);
+  assert.ok(idempotent < exhaustion,
+    "the existing-link lookup must precede the exhaustion check");
+});
+
+test("M8 keeps redemption server-only, like consume_credit", () => {
+  assert.match(m8, /revoke all on function public\.redeem_parent_invite_code\(uuid, text\) from public, anon, authenticated/);
+  assert.match(m8, /grant execute on function public\.redeem_parent_invite_code\(uuid, text\) to service_role/);
+});
+
+// ---------------------------------------------------------------- callers
+
+test("application code speaks the new role vocabulary", () => {
+  assert.match(authz, /export type Role = "SuperAdmin" \| "SchoolAdmin" \| "Teacher" \| "Parent"/);
+  assert.match(authz, /export function requireRole/);
+  // Pre-M7 'Admin' must map to SchoolAdmin, not fall through to Teacher.
+  assert.match(authz, /if \(role === "Admin"\) return "SchoolAdmin"/);
+  assert.doesNotMatch(authz, /role==="Admin"\?"Admin":"Teacher"/);
+});
+
+test("a Parent is not routed into an administrator console", () => {
+  // Parent became a storable role in M7 while the parent dashboard is Week 3,
+  // so without an explicit branch a Parent fell through to PlatformApp.
+  assert.match(appUi, /role==="Parent"\s*\n?\s*\? <ParentPending\/>/);
+  assert.match(appUi, /function ParentPending/);
+});
+
+test("the profile route cannot create a SuperAdmin that violates the invariant", () => {
+  const profileRoute = readFileSync(new URL("../app/api/profile/route.ts", import.meta.url), "utf8");
+  assert.match(profileRoute, /const schoolId = isSuperAdmin \? null : `school-\$\{authUser\.id\}`/);
+  assert.doesNotMatch(profileRoute, /\? "Admin" : "Teacher"/);
 });

@@ -24,19 +24,26 @@ export async function PUT(request: Request) {
     return Response.json({ error: "Name and school are required." }, { status: 400 });
   }
   const db = getSupabaseServer();
-  const schoolId = `school-${authUser.id}`;
-  const { error: schoolError } = await db.from("schools").upsert({
-    id: schoolId,
-    name: schoolName,
-    updated_at: new Date().toISOString(),
-  });
-  if (schoolError) return Response.json({ error: schoolError.message }, { status: 500 });
+  // M7 invariant: a SuperAdmin belongs to no school, and SchoolAdmin/Teacher
+  // must belong to one. Creating a school for a SuperAdmin would be rejected by
+  // users_role_school_scope_check.
+  const isSuperAdmin = /^priyadarshini\.adap@eduaihub(?:\.in)?$/i.test(authUser.email || "");
+  const schoolId = isSuperAdmin ? null : `school-${authUser.id}`;
+  if (schoolId) {
+    const { error: schoolError } = await db.from("schools").upsert({
+      id: schoolId,
+      name: schoolName,
+      status: "Active",
+      updated_at: new Date().toISOString(),
+    });
+    if (schoolError) return Response.json({ error: schoolError.message }, { status: 500 });
+  }
   const profile = {
     id: authUser.id,
     school_id: schoolId,
     email: authUser.email || "",
     name,
-    role: /^priyadarshini\.adap@eduaihub(?:\.in)?$/i.test(authUser.email || "") ? "Admin" : "Teacher",
+    role: isSuperAdmin ? "SuperAdmin" : "Teacher",
     phone: String(body.phone || "").trim(),
     status: "Active",
     profile_json: {
