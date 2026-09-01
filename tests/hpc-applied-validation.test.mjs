@@ -14,6 +14,12 @@ test('bulk observations hide invalid class filters and isolate Middle performanc
  assert.ok(source.includes('"Grade not set"'));
  assert.ok(source.includes('g>=6&&g<=8'));
 });
+test('mobile forms cannot widen the HPC workspace',()=>{
+ const css=fs.readFileSync(new URL('../app/globals.css',import.meta.url),'utf8');
+ assert.ok(css.includes('.form-grid>*,.form-grid label{min-width:0}'));
+ assert.ok(css.includes('.form-grid input,.form-grid select,.form-grid textarea{width:100%;max-width:100%;min-width:0}'));
+ assert.ok(css.includes('.top-actions .sync-indicator,.top-actions .credit-badge{display:none}'));
+});
 test('applied learning allows only integer Secondary grades',()=>{
  for(const grade of [9,10,11,12])assert.equal(isSecondaryGrade(grade),true);
  for(const grade of [null,undefined,0,8,13,9.5,'10',NaN])assert.equal(isSecondaryGrade(grade),false);

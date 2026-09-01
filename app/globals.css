@@ -67,3 +67,9 @@
 @media(max-width:900px){.hpc-prompt-one .form-grid{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:760px){.mobile-nav{display:flex;overflow-x:auto;justify-content:flex-start}.mobile-nav button{flex:0 0 78px;min-height:44px}.hpc-prompt-one .metric-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin-right:0;padding-right:0;overflow:visible}.hpc-prompt-one .metric-grid .metric{min-width:0}}
 @media(max-width:480px){.hpc-prompt-one .metric-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* Keep intrinsic form-control widths from widening cards on narrow screens. */
+html,body{max-width:100%;overflow-x:hidden}
+.form-grid>*,.form-grid label{min-width:0}
+.form-grid input,.form-grid select,.form-grid textarea{width:100%;max-width:100%;min-width:0}
+@media(max-width:560px){.top-actions .sync-indicator,.top-actions .credit-badge{display:none}.mobile-brand b{font-size:11px}.top-actions{gap:5px}.top-actions button{padding:0 8px}}
