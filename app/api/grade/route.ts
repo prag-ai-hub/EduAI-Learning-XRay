@@ -33,10 +33,13 @@ Each gap must be genuine and evidence-supported. "evidence" cites question numbe
 
 export async function POST(request: Request) {
   let chargedOperation = "";
+  // Hoisted so the catch block can refund: `user` is scoped to the try.
+  let chargedUserId = "";
   let credit: any = null;
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) return unauthorized();
+    chargedUserId = user.id;
     const body = (await request.json()) as GradeRequest;
     if (!body.ocrText?.trim()) return Response.json({ error: "Validate the answer-sheet OCR text before analysis." }, { status: 400 });
     if (!body.questionPaperText?.trim()) return Response.json({ error: "A validated question paper is compulsory before learning-gap analysis." }, { status: 400 });
@@ -44,7 +47,7 @@ export async function POST(request: Request) {
     if(!/^[a-zA-Z0-9:_-]{8,180}$/.test(chargedOperation))return Response.json({error:"A valid analysis operation key is required."},{status:400});
     const {getSupabaseServer}=await import("../../../lib/supabase-server");
     const db=getSupabaseServer();
-    const creditResult=await db.rpc("consume_credit",{p_operation_key:chargedOperation,p_reference:`${body.studentName||"Student"} · ${body.fileName||"answer sheet"}`,p_cost:Number(process.env.ANALYSIS_CREDIT_COST||1)});
+    const creditResult=await db.rpc("consume_credit",{p_user_id:chargedUserId,p_operation_key:chargedOperation,p_reference:`${body.studentName||"Student"} · ${body.fileName||"answer sheet"}`,p_cost:Number(process.env.ANALYSIS_CREDIT_COST||1)});
     credit=creditResult.data;
     if(creditResult.error){
       const message=creditResult.error.message||"";
@@ -160,7 +163,7 @@ Produce the CBSE diagnostic result and exclude fully correct questions from gaps
       },
     });
   } catch (error) {
-    if(chargedOperation){try{const {getSupabaseServer}=await import("../../../lib/supabase-server");await getSupabaseServer().rpc("refund_credit",{p_operation_key:chargedOperation,p_reason:error instanceof Error?error.message:"Analysis failed"})}catch{}}
+    if(chargedOperation&&chargedUserId){try{const {getSupabaseServer}=await import("../../../lib/supabase-server");await getSupabaseServer().rpc("refund_credit",{p_user_id:chargedUserId,p_operation_key:chargedOperation,p_reason:error instanceof Error?error.message:"Analysis failed"})}catch{}}
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
   }
 }
