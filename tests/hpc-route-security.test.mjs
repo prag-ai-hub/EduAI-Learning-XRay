@@ -101,6 +101,18 @@ test('public contribution respects the school flag and learner stage framework',
   if(enabled)assert.equal(evidence.value.framework_version_id,'middle-framework');else assert.equal(evidence,undefined);
  }
 });
+test('teacher-entered evidence uses the learner active stage framework',async()=>{
+ const db=database({
+  hpc_learner_profiles:[{id:'learner',school_id:'school',grade:7,academic_year:'2026-27'}],
+  hpc_stage_templates:[{is_active:true,grade_from:6,grade_to:8,framework_version_id:'middle-framework','hpc_framework_versions.status':'approved'}],
+  hpc_framework_versions:[{id:'newest-but-wrong-stage',status:'approved'}]
+ });
+ const route=moduleAt('../app/api/hpc/evidence/route.ts',{'authorization':{getAuthorizedProfile:async()=>profile},'supabase-server':{getSupabaseServer:()=>db}});
+ const response=await route.POST(request('evidence',{learnerProfileId:'learner',sourceType:'student_reflection',content:'Synthetic stage-aware evidence'}));
+ assert.equal(response.status,201);
+ const evidence=db.writes.find(write=>write.table==='hpc_evidence');
+ assert.equal(evidence.value.framework_version_id,'middle-framework');
+});
 function auth(db,role='Teacher'){return moduleAt('../lib/authorization.ts',{'supabase-auth':{getAuthenticatedUser:async()=>({id:'teacher'}),unauthorized:()=>new Response(null,{status:401})},'supabase-server':{getSupabaseServer:()=>db}})}
 for(const role of ['Student','Parent','Unknown'])test(`HPC refuses ${role} role`,async()=>{
  const db=database({users:[{...profile,role}]});assert.equal((await auth(db).getAuthorizedProfile(request('learners'))).status,403);
