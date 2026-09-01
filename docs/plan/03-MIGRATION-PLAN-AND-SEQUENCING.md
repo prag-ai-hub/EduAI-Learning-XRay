@@ -132,7 +132,10 @@ The `PGRST202` "migration not yet applied" fallback stays until M6 is confirmed 
   Requires `users.school_id` to become **nullable** (it is `not null` today) so SuperAdmin and
   Parent rows can exist.
 - `invitations.role` check widened to the same four values.
-- `schools.status` + `schools.plan_id` (see payment model §2).
+- `schools.status`.
+- ~~`schools.plan_id`~~ — **deferred to M9.** It carries a foreign key to
+  `public.plans`, which does not exist until M9, so the column is added there
+  alongside its target. Recorded in M7's header comment.
 - `support_access_grants` table for the SuperAdmin cross-tenant rule.
 - Promote the seeded admin email from `SchoolAdmin` to `SuperAdmin`.
 
@@ -237,7 +240,27 @@ That recovers ~9 hrs. The remaining ~14 hrs must come from the Day 24–25 buffe
 
 ---
 
-## 10. Pre-flight before M5
+## 10. Status — updated 2026-09-01
+
+| Migration | State |
+|---|---|
+| M5 identity unification | written, applied locally, tested |
+| M6 credit repair | written, applied locally, tested |
+| M7 roles + school status | written, applied locally, tested |
+| M8 parent–student linking | written, applied locally, tested |
+| M9 plans + subscriptions | not started (Day 4) |
+| M10 payments + events + invoices | not started (Day 4) |
+| M11 read-model publication | not started (Day 7) |
+
+None of these has been applied to a remote database.
+
+Two defects were found by running the migrations against a real local Postgres
+rather than by review, both documented in their commits: an ambiguous column
+reference that made `consume_credit` uncallable, and an ordering error that made
+parent invite-code redemption non-idempotent. Both are the kind of thing that
+only surfaces on execution — worth remembering when M9/M10 land.
+
+## 11. Pre-flight before M5
 
 1. **Initialise git and commit the current tree.** 28 days of schema surgery with no version
    control is the largest avoidable risk in this project. Not yet done.
