@@ -45,6 +45,11 @@ export async function POST(request: Request) {
     if (!body.questionPaperText?.trim()) return Response.json({ error: "A validated question paper is compulsory before learning-gap analysis." }, { status: 400 });
     chargedOperation=String(body.operationKey||"").trim();
     if(!/^[a-zA-Z0-9:_-]{8,180}$/.test(chargedOperation))return Response.json({error:"A valid analysis operation key is required."},{status:400});
+    // Verified BEFORE any credit is charged. Every early `return` past this point
+    // would exit the try block without reaching the catch that refunds, so the
+    // teacher would silently lose a credit for work that never ran.
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return Response.json({ error: "OPENAI_API_KEY is not configured." }, { status: 500 });
     const {getSupabaseServer}=await import("../../../lib/supabase-server");
     const db=getSupabaseServer();
     const creditResult=await db.rpc("consume_credit",{p_user_id:chargedUserId,p_operation_key:chargedOperation,p_reference:`${body.studentName||"Student"} · ${body.fileName||"answer sheet"}`,p_cost:Number(process.env.ANALYSIS_CREDIT_COST||1)});
@@ -61,8 +66,6 @@ export async function POST(request: Request) {
         return Response.json({error:insufficient?"You do not have enough credits to analyse this assessment. Please contact your administrator.":message},{status:insufficient?402:400});
       }
     }
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return Response.json({ error: "OPENAI_API_KEY is not configured." }, { status: 500 });
     const subject = body.subject?.trim() || "General";
     const studentName = body.studentName?.trim() || "Student";
     const fallbackMarks = Number(body.maxMarks) || 10;

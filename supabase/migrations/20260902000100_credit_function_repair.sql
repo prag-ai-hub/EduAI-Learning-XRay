@@ -62,7 +62,10 @@ begin
     raise exception 'Invalid credit cost';
   end if;
 
-  select * into v_user from public.users where id = p_user_id for update;
+  -- NOTE: this function's OUT parameters (total_credits, used_credits) share
+  -- their names with columns of public.users, so plpgsql treats a bare reference
+  -- as ambiguous. Every such reference below is table-qualified through an alias.
+  select u.* into v_user from public.users u where u.id = p_user_id for update;
   if not found then
     raise exception 'User not found';
   end if;
@@ -86,11 +89,11 @@ begin
     raise exception 'Insufficient credits';
   end if;
 
-  update public.users
-     set used_credits = used_credits + p_cost,
+  update public.users u
+     set used_credits = u.used_credits + p_cost,
          updated_at   = now()
-   where id = p_user_id
-  returning * into v_user;
+   where u.id = p_user_id
+  returning u.* into v_user;
 
   insert into public.credit_transactions
     (user_id, amount, transaction_type, operation_key, reference, reason)
@@ -135,10 +138,10 @@ begin
     return;
   end if;
 
-  update public.users
-     set used_credits = greatest(0, used_credits - v_amount),
+  update public.users u
+     set used_credits = greatest(0, u.used_credits - v_amount),
          updated_at   = now()
-   where id = p_user_id;
+   where u.id = p_user_id;
 
   insert into public.credit_transactions
     (user_id, amount, transaction_type, operation_key, reason)

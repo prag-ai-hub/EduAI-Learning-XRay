@@ -104,3 +104,32 @@ test("the refund path can still identify the user after a failure", () => {
   assert.match(gradeRoute, /if\(chargedOperation&&chargedUserId\)\{try\{/,
     "refund must not fire without a user to refund");
 });
+
+// ------------------------------------------------- regressions found by
+// ------------------------------------------------- local manual testing
+
+test("consume_credit qualifies columns that its OUT parameters shadow", () => {
+  // `returns table(total_credits, used_credits, ...)` makes those names variables
+  // in function scope, so a bare `used_credits` is ambiguous with the column.
+  // M3 had this defect too; it was simply unreachable behind the auth.uid() failure.
+  // Symptom: 'column reference "used_credits" is ambiguous'.
+  assert.match(m6, /update public\.users u\s*\n\s*set used_credits = u\.used_credits \+ p_cost/);
+  assert.match(m6, /select u\.\* into v_user from public\.users u where u\.id = p_user_id/);
+  assert.doesNotMatch(executable(m6), /set used_credits = used_credits \+/,
+    "unqualified self-reference is ambiguous against the OUT parameter");
+});
+
+test("refund_credit qualifies the same column", () => {
+  assert.match(m6, /update public\.users u\s*\n\s*set used_credits = greatest\(0, u\.used_credits - v_amount\)/);
+});
+
+test("no credit is charged before the provider key is known to exist", () => {
+  // The provider-key check uses `return`, not `throw`, so it never reaches the
+  // catch block that refunds. Charging first therefore lost the teacher a credit
+  // for work that never ran. The check must precede the charge.
+  const keyCheck = gradeRoute.indexOf('OPENAI_API_KEY is not configured');
+  const charge   = gradeRoute.indexOf('rpc("consume_credit"');
+  assert.ok(keyCheck > -1 && charge > -1, "both the key check and the charge must exist");
+  assert.ok(keyCheck < charge,
+    "the provider-key check must run before consume_credit, or an early return leaks a credit");
+});
