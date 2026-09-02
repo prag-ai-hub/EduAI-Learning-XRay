@@ -269,3 +269,19 @@ only surfaces on execution — worth remembering when M9/M10 land.
    "not yet in schema cache" fallbacks in the code, implying uncertainty.
 4. Add the missing env vars to `.env.example`: `SUPABASE_PUBLISHABLE_KEY`, the three Razorpay
    secrets, `GST_SELLER_STATE_CODE`, `GST_RATE_BPS`.
+
+---
+
+## 12. Blocked on the business, not on engineering
+
+Two items in the original plan cannot be completed from the codebase. They are
+external dependencies with real lead times, and both sit on the critical path.
+
+| Item | Plan slot | What it needs |
+|---|---|---|
+| Payment gateway KYC | Day 4 T3, Day 5 T3 | Razorpay account with business KYC submitted and verified, then sandbox keys. Verification is days, not hours. Until it lands, checkout and webhooks can only be built against fixtures. |
+| Google OAuth for external users | Day 9 T2 | The consent screen must be published (Audience → Publish app). Only `email profile` is requested — non-sensitive scopes — so no verification review is needed, but publishing is a manual step. |
+| OpenAI model id | — | `OPENAI_MODEL` still defaults to `gpt-5.6-sol`, which is not a published model. Set it and check `/api/system-health`, which now verifies it against the account. |
+| GST rates, SAC code, place-of-supply | Day 19 | Confirm with the accountant. The schema holds all three tax columns and a per-invoice rate, so the answer changes data, not structure. |
+
+Nothing else in Weeks 1–2 is blocked by these.
