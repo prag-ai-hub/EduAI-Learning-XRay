@@ -21,7 +21,7 @@ type AdminModule = "Overview" | "Users" | "Schools & Classes" | "Students" | "Ac
 type Stage = "draft" | "uploaded" | "setup" | "grading" | "review" | "approved" | "xray" | "intervention" | "followup" | "published";
 type Gap = {concept:string; mastery:number;finding?:string;misconception?:string;evidence?:string;prerequisiteConcept?:string;foundationGap?:string;recommendedLevel?:string;remediationSequence?:string[];rework?:string;severity?:"priority"|"developing"|"secure"};
 type EvaluatorQuestion = {id:string;label:string;attemptState:"attempted"|"not_attempted"|"excluded";awardedMarks:number;aiAwardedMarks?:number;maxMarks:number;allowedIncrement:number;evidence:string;rationale:string;confidence:number;aiDisposition:"accepted"|"edited"|"rejected";reviewed:boolean;teacherComment?:string;pageNumber?:number;criteria?:{id:string;label:string;awardedMarks:number;maxMarks:number;evidence?:string;rationale?:string}[]};
-type GradeResult = {fileId:string; studentName:string; questionPaperFileId?:string; questionPaperName?:string; score:number; maxMarks:number; gaps:Gap[]; date:string; feedback?:string; ocrText?:string;evidenceFingerprint?:string;reanalysisReason?:string;evaluationVersionId?:string;evaluationVersion?:number;evaluationStatus?:"submitted"|"moderation_pending"|"finalized"|"published";questionDecisions?:EvaluatorQuestion[];gradingSkipped?:boolean};
+type GradeResult = {published?:boolean; questionCount?:number; fileId:string; studentName:string; questionPaperFileId?:string; questionPaperName?:string; score:number; maxMarks:number; gaps:Gap[]; date:string; feedback?:string; ocrText?:string;evidenceFingerprint?:string;reanalysisReason?:string;evaluationVersionId?:string;evaluationVersion?:number;evaluationStatus?:"submitted"|"moderation_pending"|"finalized"|"published";questionDecisions?:EvaluatorQuestion[];gradingSkipped?:boolean};
 type Assessment = {
   id:string; title:string; type:string; grade:string; section:string; subject:string;
   maxMarks:number; date:string; stage:Stage; files:UploadFile[]; questions:number;
@@ -39,7 +39,7 @@ type WorksheetContent = {
   mcqQuestions:{question:string;options:string[];correctIndex:number;cognitiveLevel:CognitiveLevel;concept?:string}[];
   subjectiveQuestions:{question:string;modelAnswer:string;cognitiveLevel:CognitiveLevel;concept?:string}[];
 };
-type Worksheet = {id:string;title:string;type:string;status:string;template?:string;concept?:string;concepts?:string[];subject?:string;grade?:string;assessmentId?:string;mcq?:number;subjective?:number;difficulty?:string;answerSheets?:number;gradedSheets?:number;content?:WorksheetContent;guide?:any;studentName?:string;evidenceFiles?:string[]};
+type Worksheet = {published?:boolean;id:string;title:string;type:string;status:string;template?:string;concept?:string;concepts?:string[];subject?:string;grade?:string;assessmentId?:string;mcq?:number;subjective?:number;difficulty?:string;answerSheets?:number;gradedSheets?:number;content?:WorksheetContent;guide?:any;studentName?:string;evidenceFiles?:string[]};
 type ApiLogEntry = {provider:"mistral"|"openai";ms:number;ok:boolean;ts:number};
 type DemoState = {assessments:Assessment[];users:User[];interventions:Intervention[];classes:string[];schools:string[];students:{id:string;name:string;roll:string;className:string;status:string}[];resources:Worksheet[];academicYears:string[];events:string[];apiLog:ApiLogEntry[]};
 type ClassSubjectOption = {key:string;classKey:string;grade:string;section:string;subject:string;studentStrength:number};
@@ -437,7 +437,19 @@ function Review({selected,update,notify,open,setState}:any){
   const [studentIndex,setStudentIndex]=useState(0);
   const current=results[Math.min(studentIndex,Math.max(0,results.length-1))];
   const answerFile=current?assessment.files.find(file=>file.id===current.fileId):undefined;
-  const questions=current?.questionDecisions||[];
+  // A published result has had its question decisions and OCR text moved to the
+  // read model. They are fetched into component state - deliberately not back
+  // into `state`, which would re-inflate the workspace snapshot.
+  const [hydrated,setHydrated]=useState<GradeResult|null>(null);
+  useEffect(()=>{
+    let alive=true;setHydrated(null);
+    if(!current||current.questionDecisions?.length||!current.published)return;
+    void hydrateResult(assessment.id,current).then(next=>{if(alive)setHydrated(next)});
+    return()=>{alive=false};
+  },[current?.fileId,current?.published]);
+  const active=hydrated??current;
+  const questions=active?.questionDecisions||[];
+  const hydrating=Boolean(current?.published&&!current?.questionDecisions?.length&&!hydrated);
   const [drafts,setDrafts]=useState<Record<string,{mark:number;comment:string;reviewed:boolean}>>({});
   const [collapsed,setCollapsed]=useState<Record<string,boolean>>({});
   const [sourceUrl,setSourceUrl]=useState("");
@@ -458,10 +470,11 @@ function Review({selected,update,notify,open,setState}:any){
   const bulkApprove=()=>{const approved=results.map(result=>approvedResult(result,Object.fromEntries((result.questionDecisions||[]).map(question=>[question.id,{mark:question.awardedMarks,comment:question.teacherComment||"",reviewed:true}]))));const gradeResults={...(assessment.gradeResults||{})};approved.forEach(result=>{gradeResults[result.fileId]=result});const count=approved.reduce((sum,result)=>sum+(result.questionDecisions?.length||0),0);update(assessment.id,{stage:"approved",reviewed:count,totalReviews:count,gradeResults});notify(`Bulk approval started for ${approved.length} students. Resources will appear as they finish.`);approved.forEach(result=>void generateAllStudentResources(assessment,result,setState).catch(error=>notify(error instanceof Error?error.message:"Background resource generation failed","error")))};
   const jumpTo=(id:string)=>{setCollapsed(value=>({...value,[id]:false}));window.setTimeout(()=>document.getElementById(`review-question-${id}`)?.scrollIntoView({behavior:"smooth",block:"start"}),30)};
   if(!results.length)return <><PageHead eyebrow={assessment.title} title="Teacher grading review" subtitle="This selected assessment is open and ready for its reviewed answer sheets."></PageHead><section className="card span-2"><p className="eyebrow">No reviewed answers yet</p><h2>This assessment is loaded in Review</h2><p>Add or process student answer sheets from the assessment evidence area; this direct Review route does not open an OCR confirmation pop-up.</p></section></>;
+  if(hydrating)return <><PageHead eyebrow={assessment.title} title="Teacher grading review" subtitle="Loading the reviewed answers for this student."/><section className="card span-2"><p className="eyebrow">Loading</p><h2>Fetching this student's reviewed answers…</h2><p>Question-level decisions are stored with the published report rather than in your local workspace. This takes a moment.</p></section></>;
   return <><section className="review-top-actions"><button className="link" onClick={()=>open("bulk-review")}>← Back to Submissions</button><div className="review-student-bar" aria-label="Student review navigation"><button className="link" disabled={studentIndex===0} onClick={()=>setStudentIndex(value=>Math.max(0,value-1))}>← Previous Student</button><div><select aria-label="Current student" value={studentIndex} onChange={event=>setStudentIndex(Number(event.target.value))}>{results.map((result,index)=><option key={result.fileId} value={index}>{result.studentName}</option>)}</select><small>{assessment.grade}-{assessment.section} | {assessment.subject} - {assessment.title}</small></div><button className="link" disabled={studentIndex===results.length-1} onClick={()=>setStudentIndex(value=>Math.min(results.length-1,value+1))}>Next Student →</button></div><div className="button-row"><button className="link" disabled={creatingCorrectedCopy} onClick={async()=>{if(!answerFile){notify("The original answer sheet is unavailable. Re-upload it before creating a corrected copy.","error");return}setCreatingCorrectedCopy(true);try{await downloadCorrectedAnswerSheet(assessment,current,answerFile);notify(`Corrected answer sheet created for ${current.studentName}.`)}catch(error){notify(error instanceof Error?error.message:"The corrected answer sheet could not be created.","error")}finally{setCreatingCorrectedCopy(false)}}}>{creatingCorrectedCopy?"Preparing student copy…":"Create Corrected Answer Sheet"}</button><button className="primary" disabled={pendingCount>0} onClick={submitReview}>Submit Review & Generate Resource</button><button className="secondary" onClick={bulkApprove}>Bulk Approval & Generate Resource</button></div></section>
     <section className="review-student-details"><span><small>Student Name</small><b>{current.studentName}</b></span><span><small>Class</small><b>{assessment.grade} - {assessment.section}</b></span><span><small>Subject</small><b>{assessment.subject}</b></span><span><small>Assignment</small><b>{assessment.title}</b></span><span><small>Submitted On</small><b>{new Date(current.date).toLocaleString()}</b></span></section>
     <section className="review-summary-compact card" aria-label="Overall Summary"><p className="eyebrow">Overall Summary</p><div className="review-score-ring" style={{"--review-progress":`${current.maxMarks?Math.round(teacherTotal/current.maxMarks*100):0}%`} as any}><b>{teacherTotal}</b><small>/ {current.maxMarks}</small></div><div><span>AI Total Marks <b>{aiTotal} / {current.maxMarks}</b></span><span>Teacher Reviewed <b>{reviewedCount} / {questions.length}</b></span><span>Pending Review <b>{pendingCount} / {questions.length}</b></span></div></section>
-    <div className="continuous-review-layout"><div className="continuous-review-workspace">{pageNumbers.map((pageNumber,pageIndex)=>{const pageQuestions=questions.filter(question=>(Number(question.pageNumber)||1)===pageNumber);return <section className="review-page" key={pageNumber}><header><span>PAGE {pageIndex+1} OF {pageNumbers.length}</span><small>{answerFile?.name||"Answer sheet"}</small></header>{pageQuestions.map((question,questionIndex)=>{const draft=drafts[question.id]||{mark:question.awardedMarks,comment:question.teacherComment||"",reviewed:question.reviewed};const aiMark=question.aiAwardedMarks??question.awardedMarks;const isCollapsed=Boolean(collapsed[question.id]);return <article id={`review-question-${question.id}`} className={`review-question-card ${draft.reviewed?"is-reviewed":""}`} key={question.id}><button className="review-question-toggle" aria-expanded={!isCollapsed} onClick={()=>setCollapsed(value=>({...value,[question.id]:!value[question.id]}))}><span>Q{questionIndex+1} · {draft.reviewed?"✓ Reviewed":question.attemptState==="not_attempted"?"Not Answered":"Pending"}</span><b>{draft.reviewed?`${draft.mark}/${question.maxMarks}`:`—/${question.maxMarks}`}</b><i>{isCollapsed?"▾":"▴"}</i></button>{!isCollapsed&&<div className="five-stage-review"><section><p className="eyebrow">1. Question</p><div className="review-section-head"><h3>{question.label}</h3><span>{question.maxMarks} Marks</span></div></section><section><p className="eyebrow">2. Student Handwritten Answer</p>{sourceUrl?(answerFile?.type?.startsWith("image/")?<div className="answer-image-wrap"><img src={sourceUrl} alt={`Original handwritten answer for ${question.label}`}/><a className="secondary" href={sourceUrl} target="_blank" rel="noreferrer">Expand original</a></div>:<div className="answer-document-wrap"><object data={`${sourceUrl}#page=${pageNumber}`} type={answerFile?.type||"application/pdf"} aria-label={`Original answer-sheet page ${pageNumber}`}/><a className="secondary" href={`${sourceUrl}#page=${pageNumber}`} target="_blank" rel="noreferrer">Expand original page</a></div>):<p className="review-empty">Original file is unavailable on this device. Re-open or re-upload the secured answer sheet.</p>}</section><section><div className="review-section-head"><p className="eyebrow">3. OCR (Extracted Text)</p><button className="link" onClick={()=>navigator.clipboard?.writeText(question.evidence||current.ocrText||"").then(()=>notify("OCR text copied"))}>Copy</button></div><p className="ocr-review-text">{question.evidence||current.ocrText||"No stored OCR excerpt for this question."}</p></section><section className="ai-marking-panel"><p className="eyebrow">4. Marking Done by AI</p><div className="review-section-head"><h3>AI Awarded Marks</h3><strong>{aiMark} / {question.maxMarks}</strong></div><b>AI Evaluation / Feedback</b><p>{question.rationale||current.feedback||"No AI feedback stored."}</p>{question.confidence>0&&<small>AI confidence: {Math.round(question.confidence*100)}%</small>}</section><section className="teacher-edit-panel"><p className="eyebrow">5. Edit Marks & Comments — Teacher</p><div className="teacher-mark-row"><label>Teacher Edited Marks<input type="number" min="0" max={question.maxMarks} step={question.allowedIncrement||0.5} value={draft.mark} onChange={event=>changeDraft(question.id,{mark:Math.max(0,Math.min(question.maxMarks,Number(event.target.value)))})}/><span>/ {question.maxMarks}</span></label><em>{aiMark===draft.mark?`Same as AI: ${aiMark}/${question.maxMarks}`:`AI ${aiMark}/${question.maxMarks} → Teacher ${draft.mark}/${question.maxMarks}`}</em></div><label>Teacher Comments (Optional)<textarea rows={3} value={draft.comment} onChange={event=>changeDraft(question.id,{comment:event.target.value})} placeholder="Add feedback for this answer…"/></label><div className="teacher-save-row"><span>{saveStatus}</span><label className="check"><input type="checkbox" checked={draft.reviewed} onChange={event=>changeDraft(question.id,{reviewed:event.target.checked})}/> Mark as reviewed</label></div></section></div>}</article>})}<footer><span>END OF PAGE {pageIndex+1}</span></footer></section>})}</div><aside className="question-navigator card"><p className="eyebrow">Questions</p>{pageNumbers.map((pageNumber,pageIndex)=><section key={pageNumber}><b>Page {pageIndex+1}</b>{questions.filter(question=>(Number(question.pageNumber)||1)===pageNumber).map(question=>{const draft=drafts[question.id];return <button key={question.id} onClick={()=>jumpTo(question.id)}><span>{question.label}</span><small>{draft?.reviewed?"Reviewed":question.attemptState==="not_attempted"?"Not Answered":"Pending"}</small><em>{draft?.reviewed?`${draft.mark}/${question.maxMarks}`:`—/${question.maxMarks}`}</em></button>})}</section>)}</aside></div></>;
+    <div className="continuous-review-layout"><div className="continuous-review-workspace">{pageNumbers.map((pageNumber,pageIndex)=>{const pageQuestions=questions.filter(question=>(Number(question.pageNumber)||1)===pageNumber);return <section className="review-page" key={pageNumber}><header><span>PAGE {pageIndex+1} OF {pageNumbers.length}</span><small>{answerFile?.name||"Answer sheet"}</small></header>{pageQuestions.map((question,questionIndex)=>{const draft=drafts[question.id]||{mark:question.awardedMarks,comment:question.teacherComment||"",reviewed:question.reviewed};const aiMark=question.aiAwardedMarks??question.awardedMarks;const isCollapsed=Boolean(collapsed[question.id]);return <article id={`review-question-${question.id}`} className={`review-question-card ${draft.reviewed?"is-reviewed":""}`} key={question.id}><button className="review-question-toggle" aria-expanded={!isCollapsed} onClick={()=>setCollapsed(value=>({...value,[question.id]:!value[question.id]}))}><span>Q{questionIndex+1} · {draft.reviewed?"✓ Reviewed":question.attemptState==="not_attempted"?"Not Answered":"Pending"}</span><b>{draft.reviewed?`${draft.mark}/${question.maxMarks}`:`—/${question.maxMarks}`}</b><i>{isCollapsed?"▾":"▴"}</i></button>{!isCollapsed&&<div className="five-stage-review"><section><p className="eyebrow">1. Question</p><div className="review-section-head"><h3>{question.label}</h3><span>{question.maxMarks} Marks</span></div></section><section><p className="eyebrow">2. Student Handwritten Answer</p>{sourceUrl?(answerFile?.type?.startsWith("image/")?<div className="answer-image-wrap"><img src={sourceUrl} alt={`Original handwritten answer for ${question.label}`}/><a className="secondary" href={sourceUrl} target="_blank" rel="noreferrer">Expand original</a></div>:<div className="answer-document-wrap"><object data={`${sourceUrl}#page=${pageNumber}`} type={answerFile?.type||"application/pdf"} aria-label={`Original answer-sheet page ${pageNumber}`}/><a className="secondary" href={`${sourceUrl}#page=${pageNumber}`} target="_blank" rel="noreferrer">Expand original page</a></div>):<p className="review-empty">Original file is unavailable on this device. Re-open or re-upload the secured answer sheet.</p>}</section><section><div className="review-section-head"><p className="eyebrow">3. OCR (Extracted Text)</p><button className="link" onClick={()=>navigator.clipboard?.writeText(question.evidence||active?.ocrText||"").then(()=>notify("OCR text copied"))}>Copy</button></div><p className="ocr-review-text">{question.evidence||active?.ocrText||"No stored OCR excerpt for this question."}</p></section><section className="ai-marking-panel"><p className="eyebrow">4. Marking Done by AI</p><div className="review-section-head"><h3>AI Awarded Marks</h3><strong>{aiMark} / {question.maxMarks}</strong></div><b>AI Evaluation / Feedback</b><p>{question.rationale||current.feedback||"No AI feedback stored."}</p>{question.confidence>0&&<small>AI confidence: {Math.round(question.confidence*100)}%</small>}</section><section className="teacher-edit-panel"><p className="eyebrow">5. Edit Marks & Comments — Teacher</p><div className="teacher-mark-row"><label>Teacher Edited Marks<input type="number" min="0" max={question.maxMarks} step={question.allowedIncrement||0.5} value={draft.mark} onChange={event=>changeDraft(question.id,{mark:Math.max(0,Math.min(question.maxMarks,Number(event.target.value)))})}/><span>/ {question.maxMarks}</span></label><em>{aiMark===draft.mark?`Same as AI: ${aiMark}/${question.maxMarks}`:`AI ${aiMark}/${question.maxMarks} → Teacher ${draft.mark}/${question.maxMarks}`}</em></div><label>Teacher Comments (Optional)<textarea rows={3} value={draft.comment} onChange={event=>changeDraft(question.id,{comment:event.target.value})} placeholder="Add feedback for this answer…"/></label><div className="teacher-save-row"><span>{saveStatus}</span><label className="check"><input type="checkbox" checked={draft.reviewed} onChange={event=>changeDraft(question.id,{reviewed:event.target.checked})}/> Mark as reviewed</label></div></section></div>}</article>})}<footer><span>END OF PAGE {pageIndex+1}</span></footer></section>})}</div><aside className="question-navigator card"><p className="eyebrow">Questions</p>{pageNumbers.map((pageNumber,pageIndex)=><section key={pageNumber}><b>Page {pageIndex+1}</b>{questions.filter(question=>(Number(question.pageNumber)||1)===pageNumber).map(question=>{const draft=drafts[question.id];return <button key={question.id} onClick={()=>jumpTo(question.id)}><span>{question.label}</span><small>{draft?.reviewed?"Reviewed":question.attemptState==="not_attempted"?"Not Answered":"Pending"}</small><em>{draft?.reviewed?`${draft.mark}/${question.maxMarks}`:`—/${question.maxMarks}`}</em></button>})}</section>)}</aside></div></>;
 }
 
 function XRay({state,setState,selected,openAssessment,open,notify}:any){
@@ -587,10 +600,10 @@ function ResourcesView({state,setState,open,notify}:any){
         <div className="resource-row resource-head" role="row"><span role="columnheader">Student name</span><span role="columnheader">Learning gap report</span><span role="columnheader">Study guide</span><span role="columnheader">Worksheet & answer key</span></div>
         {!rows.length&&<div className="empty-state"><b>No analysed students match these filters</b><p>Grade an answer sheet or change the filters to view downloadable resources.</p></div>}
         {rows.map(({assessment,result,guide,worksheet})=><div className="resource-row" role="row" key={`${assessment.id}-${result.fileId}`}>
-          <span role="cell"><b>{result.studentName}</b><small>Class {assessment.grade}{assessment.section} · {assessment.subject}<br/>{assessment.title}</small><button className="primary download-all" onClick={async e=>{const button=e.currentTarget;button.disabled=true;const label=button.textContent;button.textContent="Checking all reports…";try{const complete=guide&&worksheet?{guide,worksheet}:await generateAllStudentResources(assessment,result,setState);button.textContent="Preparing four PDFs…";await downloadAssessmentZip(assessment,result,complete.guide,complete.worksheet)}catch(error){notify(error instanceof Error?error.message:"Report bundle download failed","error")}finally{button.disabled=false;button.textContent=label}}}>Download All (ZIP)</button><button className="secondary parent-share-button" onClick={()=>open(`parent-share:${assessment.id}:${result.fileId}`)}>▦ Share with parent</button></span>
-          <span role="cell"><button className="link" onClick={()=>downloadStudentLearningGapReport(assessment,result)}>Download report</button></span>
-          <span role="cell">{guide?<button className="link" onClick={()=>downloadStudyGuide(guide,guide.guide)}>Download study guide</button>:<small>Not created</small>}</span>
-          <span role="cell">{worksheet?<div className="resource-actions"><button className="link" onClick={()=>downloadWorksheet(worksheet,worksheet.content)}>Worksheet</button><button className="link" onClick={()=>downloadAnswerKey(worksheet,worksheet.content)}>Answer key</button></div>:<small>Not created</small>}</span>
+          <span role="cell"><b>{result.studentName}</b><small>Class {assessment.grade}{assessment.section} · {assessment.subject}<br/>{assessment.title}</small><button className="primary download-all" onClick={async e=>{const button=e.currentTarget;button.disabled=true;const label=button.textContent;button.textContent="Checking all reports…";try{const complete=guide&&worksheet?{guide,worksheet}:await generateAllStudentResources(assessment,result,setState);button.textContent="Preparing four PDFs…";const [fullGuide,fullWorksheet]=await Promise.all([hydrateResource(complete.guide),hydrateResource(complete.worksheet)]);await downloadAssessmentZip(assessment,result,fullGuide,fullWorksheet)}catch(error){notify(error instanceof Error?error.message:"Report bundle download failed","error")}finally{button.disabled=false;button.textContent=label}}}>Download All (ZIP)</button><button className="secondary parent-share-button" onClick={()=>open(`parent-share:${assessment.id}:${result.fileId}`)}>▦ Share with parent</button></span>
+          <span role="cell"><button className="link" onClick={async()=>{const detailed=await hydrateResult(assessment.id,result);downloadStudentLearningGapReport(assessment,detailed)}}>Download report</button></span>
+          <span role="cell">{guide?<button className="link" onClick={async()=>{const full=await hydrateResource(guide);downloadStudyGuide(full,full.guide)}}>Download study guide</button>:<small>Not created</small>}</span>
+          <span role="cell">{worksheet?<div className="resource-actions"><button className="link" onClick={async()=>{const full=await hydrateResource(worksheet);downloadWorksheet(full,full.content)}}>Worksheet</button><button className="link" onClick={async()=>{const full=await hydrateResource(worksheet);downloadAnswerKey(full,full.content)}}>Answer key</button></div>:<small>Not created</small>}</span>
         </div>)}
       </div>
     </section>
@@ -907,6 +920,58 @@ function StudyGuideDialog({assessment,fileId,open,setState,done}:any){
   </>
 }
 
+// ---------------------------------------------------------------------------
+// Blob trimming.
+//
+// A published result's OCR transcript, question decisions and generated
+// resource bodies live in the read model, so they are dropped from the workspace
+// snapshot. Measured against real data that is ~23 KB of the ~31.7 KB each
+// student-assessment occupied, against a 4 MB cap that previously held about
+// 129 of them in total. They are fetched back only when a screen needs them.
+// ---------------------------------------------------------------------------
+function trimPublishedResult(result:GradeResult):GradeResult{
+  const {ocrText,questionDecisions,...rest}=result;
+  void ocrText;void questionDecisions;
+  // Gaps keep only what the heatmap, concept-mastery aggregates and student
+  // lists read synchronously. The diagnostic prose - finding, misconception,
+  // evidence, rework, remediation sequence - is the bulk of a gap and is only
+  // needed by the learning-gap dialog and its PDF, both of which hydrate.
+  return {
+    ...rest,
+    gaps:(result.gaps||[]).map(gap=>({concept:gap.concept,mastery:gap.mastery,severity:gap.severity})),
+    published:true,
+    questionCount:questionDecisions?.length??result.questionCount,
+  };
+}
+function trimPublishedResource(resource:Worksheet):Worksheet{
+  const {guide,content,...rest}=resource;
+  void guide;void content;
+  return {...rest,published:true};
+}
+async function hydrateResult(assessmentId:string,result:GradeResult):Promise<GradeResult>{
+  if(!result.published)return result;
+  if(result.questionDecisions?.length&&result.gaps?.some(gap=>gap.finding))return result;
+  try{
+    const response=await authFetch(`/api/publish?assessmentId=${encodeURIComponent(assessmentId)}&fileId=${encodeURIComponent(result.fileId)}`,{cache:"no-store"});
+    if(!response.ok)return result;
+    const payload=await response.json();
+    return {...result,
+      ocrText:payload.ocrText||"",
+      questionDecisions:payload.questionDecisions||[],
+      gaps:Array.isArray(payload.gaps)&&payload.gaps.length?payload.gaps:result.gaps};
+  }catch{return result}
+}
+async function hydrateResource(resource:Worksheet):Promise<Worksheet>{
+  if(resource?.guide||resource?.content)return resource;
+  if(!resource?.published)return resource;
+  try{
+    const response=await authFetch(`/api/publish?resourceId=${encodeURIComponent(resource.id)}`,{cache:"no-store"});
+    if(!response.ok)return resource;
+    const payload=await response.json();
+    return {...resource,guide:payload.guide??resource.guide,content:payload.content??resource.content};
+  }catch{return resource}
+}
+
 async function generateAllStudentResources(assessment:Assessment,result:GradeResult,setState:any){
   const guideResponse=await authFetch("/api/generate-study-guide",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({subject:assessment.subject,concept:result.gaps[0]?.concept||assessment.subject,studentName:result.studentName,mastery:result.gaps[0]?.mastery??0,gaps:result.gaps,feedback:result.feedback,ocrText:result.ocrText,evidenceFiles:assessment.files.map(file=>`${file.documentRole||inferDocumentRole(file.name)}: ${file.name}`)})});
   const guidePayload=await guideResponse.json();if(!guideResponse.ok)throw new Error(guidePayload?.error||"Study-guide generation failed");
@@ -916,6 +981,29 @@ async function generateAllStudentResources(assessment:Assessment,result:GradeRes
   const guide:Worksheet={id:`guide-${assessment.id}-${result.fileId}`,title:guidePayload.guide.title,type:"Study Guide",status:"Saved",subject:assessment.subject,grade:assessment.grade,assessmentId:assessment.id,concepts,guide:guidePayload.guide,studentName:result.studentName,evidenceFiles:assessment.files.map(file=>`${file.documentRole||inferDocumentRole(file.name)} · ${file.name}`)};
   const worksheet:Worksheet={id:`worksheet-${assessment.id}-${result.fileId}`,title:`${result.studentName} Personalized Practice`,type:"Targeted worksheet",status:"Approved",template:"Guided recovery",concept:concepts[0]||assessment.subject,concepts,subject:assessment.subject,grade:assessment.grade,assessmentId:assessment.id,studentName:result.studentName,mcq:Math.max(6,concepts.length*2),subjective:Math.max(4,concepts.length),difficulty:"Mixed",answerSheets:0,gradedSheets:0,content:worksheetPayload as WorksheetContent};
   setState((state:DemoState)=>({...state,resources:[guide,worksheet,...state.resources.filter(item=>item.id!==guide.id&&item.id!==worksheet.id)],events:[`All reports ready · ${result.studentName}`,...state.events]}));
+  // Publish into the normalized read model. This is what makes the result
+  // readable by a parent or an administrator at all — the workspace blob is
+  // keyed to one teacher and nobody else can query it. Failure is logged, not
+  // surfaced: the teacher's own copy is already saved, so a publishing problem
+  // must not look like losing their work.
+  try{
+    const published=await authFetch("/api/publish",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({assessment,result,resources:[guide,worksheet]})});
+    if(published.ok){
+      // Only trim once the read model definitely holds the data. If publishing
+      // failed the blob keeps the full copy, so nothing is ever dropped without
+      // a durable home to fall back to.
+      const trimmedResult=trimPublishedResult(result);
+      setState((state:DemoState)=>({...state,
+        assessments:state.assessments.map(item=>item.id===assessment.id
+          ?{...item,gradeResults:{...(item.gradeResults||{}),[result.fileId]:trimmedResult}}
+          :item),
+        resources:state.resources.map(item=>item.id===guide.id?trimPublishedResource(guide)
+                                    :item.id===worksheet.id?trimPublishedResource(worksheet):item),
+      }));
+    }else{
+      console.error("Publish to read model failed",await published.text());
+    }
+  }catch(cause){console.error("Publish to read model failed",cause)}
   return {guide,worksheet};
 }
 
@@ -1103,7 +1191,15 @@ function PerFileGradeDialog({assessment,file,state,setState,update,open,notify,d
 }
 
 function StudentGapsDialog({assessment,fileId,open}:any){
-  const result:GradeResult|undefined=assessment.gradeResults?.[fileId];
+  const stored:GradeResult|undefined=assessment.gradeResults?.[fileId];
+  const [full,setFull]=useState<GradeResult|undefined>(stored);
+  useEffect(()=>{
+    let alive=true;setFull(stored);
+    if(!stored?.published)return;
+    void hydrateResult(assessment.id,stored).then(next=>{if(alive)setFull(next)});
+    return()=>{alive=false};
+  },[fileId,stored?.published]);
+  const result:GradeResult|undefined=full;
   const file=(assessment.files||[]).find((f:UploadFile)=>f.id===fileId);
   if(!result)return <><DialogHead eyebrow={assessment.title} title="Learning gaps report"/><p className="modal-copy">This answer sheet has not been graded yet. Grade it first to unlock its learning gaps report.</p><button className="primary full" onClick={()=>open(`grade-file:${fileId}`)}>Grade this answer sheet</button></>;
   const sorted=result.gaps.slice().sort((a,b)=>a.mastery-b.mastery);
@@ -1124,7 +1220,7 @@ function StudentGapsDialog({assessment,fileId,open}:any){
     <div className="diagnostic-gap-list">{sorted.map((g,index)=><article key={g.concept} className={g.mastery<55?"critical":""}><header><span>{index+1}</span><div><p>{g.severity||(g.mastery<55?"priority":"developing")} learning gap</p><h3>{g.concept}</h3></div><b>{g.mastery}% mastery</b></header><dl><div><dt>Diagnostic finding</dt><dd>{g.finding||`The response shows incomplete understanding of ${g.concept}.`}</dd></div><div><dt>Likely misunderstanding</dt><dd>{g.misconception||"The exact misconception was not captured in this earlier analysis. Reanalyse once to create the detailed diagnostic."}</dd></div><div><dt>Evidence from the answer</dt><dd>{g.evidence||result.feedback||"Review the OCR answer and teacher feedback for supporting evidence."}</dd></div><div><dt>What the child needs to rework</dt><dd>{g.rework||`Revisit the core idea, then practise explaining and applying ${g.concept}.`}</dd></div></dl></article>)}</div>
     <p className="modal-copy">The study guide will cover all {sorted.length} identified topic{sorted.length===1?"":"s"}, ordered from the most urgent knowledge gap to the strongest area.</p>
     <div className="button-row">
-      <button className="secondary" onClick={()=>downloadStudentLearningGapReport(assessment,result,file)}>Download PDF Learning Gap Report</button>
+      <button className="secondary" onClick={async()=>{const detailed=await hydrateResult(assessment.id,result);downloadStudentLearningGapReport(assessment,detailed,file)}}>Download PDF Learning Gap Report</button>
       <button className="secondary" onClick={()=>open(`grade-file:${fileId}`)}>Regrade this sheet</button>
       <button className="primary" onClick={()=>open(`study-guide:${fileId}`)}>Generate study guide</button>
     </div>
@@ -1623,7 +1719,8 @@ function safeDownloadName(value:string){return value.normalize("NFKD").replace(/
 async function downloadAssessmentZip(assessment:Assessment,result:GradeResult,guide?:Worksheet,worksheet?:Worksheet){
   const base=safeDownloadName(`${result.studentName}_${assessment.title}`),folder=`${base}/`,files:Record<string,Uint8Array>={};
   if(!guide?.guide||!worksheet?.content)throw new Error("All four reports must finish generating before download. Please try again.");
-  const reportBlob=await createBrandedPdfBlob("Learning Gap Report",`Class ${assessment.grade}${assessment.section} · ${assessment.subject} · ${assessment.title}`,studentLearningGapDocumentBody(assessment,result));
+  const detailedResult=await hydrateResult(assessment.id,result);
+  const reportBlob=await createBrandedPdfBlob("Learning Gap Report",`Class ${assessment.grade}${assessment.section} · ${assessment.subject} · ${assessment.title}`,studentLearningGapDocumentBody(assessment,detailedResult));
   files[folder+"Learning_Gap_Report.pdf"]=await verifiedPdfBytes(reportBlob);
   const guideBlob=await createBrandedPdfBlob(guide.title||"Study Guide",`${guide.subject||assessment.subject} · ${guide.grade||assessment.grade} · ${guide.studentName||result.studentName}`,studyGuideDocumentBody(guide.guide,guide.evidenceFiles||assessment.files.map(file=>`${file.documentRole||inferDocumentRole(file.name)} · ${file.name}`)));files[folder+"Study_Guide.pdf"]=await verifiedPdfBytes(guideBlob);
   const worksheetMeta=`${worksheet.subject||assessment.subject} · ${worksheet.grade||assessment.grade} · ${(worksheet.concepts||[worksheet.concept]).filter(Boolean).join(" · ")}`;const worksheetBlob=await createBrandedPdfBlob(worksheet.title||"Worksheet",worksheetMeta,worksheetDocumentBody(worksheet.content),false);files[folder+"Worksheet.pdf"]=await verifiedPdfBytes(worksheetBlob);const answerBlob=await createBrandedPdfBlob(`${worksheet.title||"Worksheet"} · Answer Key`,`${worksheet.subject||assessment.subject} · ${worksheet.grade||assessment.grade}`,answerKeyDocumentBody(worksheet.content),false);files[folder+"Answer_Key.pdf"]=await verifiedPdfBytes(answerBlob);

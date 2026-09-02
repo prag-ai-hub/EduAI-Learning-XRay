@@ -211,10 +211,12 @@ test("resource library filters student documents into four downloadable columns"
   for (const column of ["Student name", "Learning gap report", "Study guide", "Worksheet & answer key"]) {
     assert.ok(app.includes(`role="columnheader">${column}`), `missing resource column: ${column}`);
   }
-  assert.match(app, /downloadStudentLearningGapReport\(assessment,result\)/);
-  assert.match(app, /downloadStudyGuide\(guide,guide\.guide\)/);
-  assert.match(app, /downloadWorksheet\(worksheet,worksheet\.content\)/);
-  assert.match(app, /downloadAnswerKey\(worksheet,worksheet\.content\)/);
+    // The result is hydrated from the read model first, so the argument is a
+  // detailed copy rather than the trimmed one held in the workspace blob.
+  assert.match(app, /downloadStudentLearningGapReport\(assessment,(result|detailed)\)/);
+  assert.match(app, /downloadStudyGuide\((guide,guide|full,full)\.guide\)/);
+  assert.match(app, /downloadWorksheet\((worksheet,worksheet|full,full)\.content\)/);
+  assert.match(app, /downloadAnswerKey\((worksheet,worksheet|full,full)\.content\)/);
   assert.match(app, /assessmentId:assessment\.id/);
   assert.match(app, /studentName:worksheet\?\.studentName\|\|presetStudent/);
 });
@@ -239,7 +241,7 @@ test("all generated downloads use branded PDF documents with reusable visuals", 
   assert.doesNotMatch(app, /type:"text\/plain;charset=utf-8"/);
   assert.doesNotMatch(app, /Resource_Generation_Status\.pdf/);
   assert.match(app, /All four reports must finish generating before download/);
-  assert.match(app, /studentLearningGapDocumentBody\(assessment,result\)/);
+  assert.match(app, /studentLearningGapDocumentBody\(assessment,(result|detailedResult)\)/);
   assert.match(app, /studyGuideDocumentBody\(guide\.guide,guide\.evidenceFiles/);
   assert.doesNotMatch(app, /Missing_Files\.txt/);
   assert.match(app, /worksheetDocumentBody\(worksheet\.content\),false/);
