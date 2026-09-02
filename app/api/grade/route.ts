@@ -157,7 +157,16 @@ Produce the CBSE diagnostic result and exclude fully correct questions from gaps
     if (Math.abs(proposedMaximum - maxMarks) > 0.001) throw new Error("The question-level maximum marks did not match the assessment total.");
     return Response.json({
       score: Math.max(0, Math.min(maxMarks, Number(result.score) || 0)), maxMarks, questions, gaps, feedback: result.feedback,
-      timing: [{ provider: "openai", ms, ok: true }], credits: credit?.[0]||null,
+      timing: [{ provider: "openai", ms, ok: true }],
+      // The RPC's OUT names are out_-prefixed so they cannot shadow columns of
+      // public.users (M12). Mapped back to the shape /api/credits already uses,
+      // so the wire format is unchanged by that rename.
+      credits: credit?.[0] ? {
+        total: credit[0].out_total_credits,
+        used: credit[0].out_used_credits,
+        remaining: credit[0].out_remaining_credits,
+        charged: credit[0].out_charged,
+      } : null,
       gradingEvidence: {
         questionPaper: body.questionPaperName || null,
         markingScheme: body.markingSchemeName || (body.answerKey ? "Typed marking scheme" : null),
