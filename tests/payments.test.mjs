@@ -88,3 +88,32 @@ test("requireEntitlement gates billable work without blocking reads", () => {
 test("requireEntitlement does not lock out schools before M9 is deployed", () => {
   assert.match(authz, /resolve_entitlement\|schema cache\|could not find the function/);
 });
+
+const m15 = read("supabase/migrations/20260905000300_refund_reopens_operation_key.sql");
+
+test("a refunded operation key can be charged again", () => {
+  // consume_credit asked "has this key ever been charged?" when the right
+  // question is "does it currently hold a charge?". refund_credit reversed the
+  // charge but left the consumption row, so the key answered "already charged"
+  // forever and every retry after a failure was free.
+  assert.match(m15, /and refunded_at is null/);
+  assert.match(m15, /Only an UNREVERSED charge makes this a replay/);
+});
+
+test("uniqueness now constrains live charges, not the key for all time", () => {
+  assert.match(m15, /drop index if exists public\.credit_transactions_operation_key_idx/);
+  assert.match(m15, /create unique index if not exists credit_transactions_live_charge_idx[\s\S]*?where transaction_type = 'consumption' and refunded_at is null/);
+});
+
+test("refund_credit guards on the charge, not on a marker row", () => {
+  // Guarding on the existence of a ':refund' row meant a re-charged operation
+  // could never be refunded a second time.
+  assert.match(m15, /transaction_type = 'consumption'\s*\n\s*and refunded_at is null/);
+  assert.doesNotMatch(m15.slice(m15.indexOf("function public.refund_credit")),
+                      /exists\s*\([^)]*':refund'/);
+});
+
+test("existing reversed charges are backfilled, not left ambiguous", () => {
+  assert.match(m15, /update public\.credit_transactions c\s*\n\s*set refunded_at/);
+  assert.match(m15, /r\.operation_key = c\.operation_key \|\| ':refund'/);
+});

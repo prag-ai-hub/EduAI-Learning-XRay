@@ -19,19 +19,14 @@ DB="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
 MIG="supabase/migrations"
 HOLD=".migrations-held"
 # Everything from M5 onward, applied by hand after seeding.
-CHAIN=(
-  20260902000000_identity_uuid_unification.sql
-  20260902000100_credit_function_repair.sql
-  20260903000000_roles_and_school_status.sql
-  20260903000100_parent_student_links.sql
-  20260903000200_share_extraction_and_concurrency.sql
-  20260904000000_read_model_publication.sql
-  20260904000100_out_parameter_shadowing.sql
-  20260904000200_unify_user_foreign_keys.sql
-  20260905000000_plans_and_subscriptions.sql
-  20260905000100_payments_events_invoices.sql
-  20260905000200_close_rls_gap.sql
-)
+#
+# Derived from the migrations directory rather than listed. A hardcoded list
+# drifts: M15 was written and the list was not updated, so this harness silently
+# exercised an incomplete chain and reported a clean run against the old, buggy
+# behaviour. Anything after the last pre-existing migration is the chain.
+BASELINE_LAST="20260819000000_evaluator_grading_foundation.sql"
+mapfile -t CHAIN < <(ls "$MIG" | grep -E '^[0-9]{14}_.*\.sql$' | sort | awk -v b="$BASELINE_LAST" '$0 > b')
+if [ "${#CHAIN[@]}" -eq 0 ]; then echo "No migrations found after $BASELINE_LAST"; exit 1; fi
 
 FAILED=0
 pass(){ printf '  \033[32mPASS\033[0m  %s\n' "$1"; }
@@ -127,6 +122,16 @@ R=$(q "select out_charged::text from public.consume_credit('$A2','legacy:op:0001
 eq "legacy operation key still idempotent" "$R" "false"
 q "select public.refund_credit('$A2','regression:op:0001','undo')" >/dev/null
 eq "refund restores"                 "$(q "select total_credits-used_credits from public.users where id='$A2'")" "43"
+
+# The interaction, not the two mechanisms in isolation. Idempotency and
+# refunding were each covered; together they made every retry after a failure
+# permanently free, because the consumption row stayed and kept answering
+# "already charged". /api/grade reproduces the same key for the same evidence,
+# so one failed analysis used to buy unlimited free retries.
+eq "a refunded operation can be charged again" "$(q "select out_charged::text from public.consume_credit('$A2','regression:op:0001','retry',1)")" "true"
+eq "and that retry actually cost a credit"     "$(q "select total_credits-used_credits from public.users where id='$A2'")" "42"
+eq "an unrefunded operation is still a replay" "$(q "select out_charged::text from public.consume_credit('$A2','regression:op:0001','again',1)")" "false"
+eq "the reversal is recorded on the charge"    "$(q "select count(*) from public.credit_transactions where user_id='$A2' and transaction_type='consumption' and refunded_at is not null")" "1"
 
 head "Security posture after the chain"
 eq "tables without RLS"              "$(q "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and not c.relrowsecurity")" "0"

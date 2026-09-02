@@ -83,3 +83,14 @@ test("a SuperAdmin must name a school and hold a grant", () => {
   assert.match(authz, /support_access_grants/);
   assert.match(authz, /support\.cross_tenant_read/);
 });
+
+test("the regression harness derives its migration chain from disk", () => {
+  // It previously hardcoded the list. M15 was added and the list was not, so
+  // the harness exercised an incomplete chain and reported a clean run against
+  // the very behaviour M15 fixed. A guard that can silently go stale is worse
+  // than no guard, because it is trusted.
+  const harness = read("scripts/test-migration-regression.sh");
+  assert.match(harness, /mapfile -t CHAIN < <\(ls "\$MIG"/);
+  assert.doesNotMatch(harness, /CHAIN=\(\s*\n\s*2026/,
+    "the chain must not be a hardcoded list");
+});
