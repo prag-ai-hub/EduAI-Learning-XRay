@@ -128,12 +128,75 @@ export async function requireActiveSchool(profile:AuthorizedProfile|Response){
   return Response.json({error:message,schoolStatus:data.status},{status:403});
 }
 
+export type Entitlement = {
+  hasEntitlement:boolean; status:string; planCode:string|null; planName:string|null;
+  features:Record<string,unknown>; creditsIncluded:number;
+  periodEnd:string|null; graceUntil:string|null;
+};
+
+/** Resolves a school's live subscription. subscriptions is authoritative — never schools.plan_id. */
+export async function getEntitlement(schoolId:string):Promise<Entitlement>{
+  const {data,error}=await getSupabaseServer().rpc("resolve_entitlement",{p_school_id:schoolId});
+  if(error)throw new Error(error.message);
+  const row=Array.isArray(data)?data[0]:data;
+  return {
+    hasEntitlement:Boolean(row?.out_has_entitlement),
+    status:String(row?.out_status||"none"),
+    planCode:row?.out_plan_code??null,
+    planName:row?.out_plan_name??null,
+    features:(row?.out_features||{}) as Record<string,unknown>,
+    creditsIncluded:Number(row?.out_credits_included||0),
+    periodEnd:row?.out_period_end??null,
+    graceUntil:row?.out_grace_until??null,
+  };
+}
+
 /**
- * Entitlement gate. Deliberately unimplemented: it must resolve through
- * public.subscriptions, which does not exist until M9. Wiring it to a stub that
- * returns null would create a gate that silently permits everything, which is
- * worse than no gate at all — so callers must not use it yet.
+ * Billing gate. Answers 402 with a machine-readable reason so the client can
+ * route to checkout rather than showing a generic failure.
+ *
+ * Deliberately does NOT block reads — a school must always be able to see its
+ * own history and the invoice it needs to pay. Callers apply this to new
+ * billable work only.
+ *
+ * A named `feature` must be present and truthy in the plan's features object.
+ * An absent feature is a denial: a plan that has not been given a capability
+ * does not have it. Failing open here would make every future feature free.
  */
-export async function requireEntitlement(_profile:AuthorizedProfile|Response, _feature:string):Promise<Response|null>{
-  throw new Error("requireEntitlement is not implemented until M9 (plans + subscriptions). Do not call it yet.");
+export async function requireEntitlement(profile:AuthorizedProfile|Response, feature?:string){
+  if(profile instanceof Response)return profile;
+  if(profile.role==="SuperAdmin")return null;
+  if(!profile.school_id)return Response.json({error:"Your profile is not assigned to a school."},{status:403});
+
+  let entitlement:Entitlement;
+  try{
+    entitlement=await getEntitlement(profile.school_id);
+  }catch(cause){
+    // Before M9 reaches a database the function does not exist. Treating that
+    // as "not entitled" would lock out every existing pilot school, so it is
+    // treated as unmetered and logged.
+    const message=cause instanceof Error?cause.message:"";
+    if(/resolve_entitlement|schema cache|could not find the function/i.test(message)){
+      console.warn("Entitlement checks are unavailable: the M9 migration has not reached the schema cache.");
+      return null;
+    }
+    return Response.json({error:message||"Entitlement could not be resolved."},{status:500});
+  }
+
+  if(!entitlement.hasEntitlement){
+    return Response.json({
+      error:entitlement.status==="none"
+        ? "This school does not have an active subscription."
+        : `This school's subscription is ${entitlement.status}. Renew it to continue.`,
+      reason:"subscription_required", subscriptionStatus:entitlement.status,
+    },{status:402});
+  }
+
+  if(feature && !entitlement.features?.[feature]){
+    return Response.json({
+      error:`Your ${entitlement.planName||"current"} plan does not include this feature.`,
+      reason:"upgrade_required", feature, planCode:entitlement.planCode,
+    },{status:402});
+  }
+  return null;
 }

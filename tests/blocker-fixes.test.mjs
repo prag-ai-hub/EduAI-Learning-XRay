@@ -134,6 +134,11 @@ test("a suspended school blocks new work but never blocks reads", () => {
 });
 
 test("requireEntitlement refuses to be a gate that permits everything", () => {
-  // Stubbing it to return null would create a check that silently passes.
-  assert.match(authz, /throw new Error\("requireEntitlement is not implemented until M9/);
+  // It was deliberately left throwing until M9 gave it subscriptions to resolve
+  // through, because a stub returning null is a check that silently passes.
+  // Now implemented, the same intent holds: an absent feature is a denial.
+  assert.match(authz, /export async function requireEntitlement/);
+  assert.match(authz, /if\(feature && !entitlement\.features\?\.\[feature\]\)/);
+  assert.match(authz, /reason:"upgrade_required"/);
+  assert.doesNotMatch(authz, /return null;\s*\/\/ TODO/);
 });
