@@ -105,6 +105,25 @@ Without them you get a clear error on those actions only; nothing else breaks.
 8. With a valid key, run it again and watch a `consumption` row appear.
    If the analysis fails mid-flight, a matching `refund` row appears beside it.
 
+## Verifying everything at once
+
+```bash
+./scripts/test-migration-regression.sh   # 34 checks, database level
+./scripts/smoke-app.sh                   # 20 checks, HTTP level  (needs npm run dev)
+npm test                                 # 145 checks, source contracts
+```
+
+**`test-migration-regression.sh` is the one that matters before a production
+push.** Every other test runs against a *fresh* database, where a conversion has
+nothing to lose. This one rebuilds the database at the M1–M4 state, seeds it the
+way a live pilot school actually looks — text user ids, role `Admin`, integer
+scores, a populated workspace blob, a credit ledger, an evaluation version —
+then applies M5…M14 over it and checks that nothing was lost or silently
+changed. It also asserts the security posture afterwards: no table without RLS,
+no `anon` grants, nothing referencing `auth.users` except `public.users`.
+
+Both scripts reset your local database when they finish.
+
 ## Verifying the migrations specifically
 
 ```bash
