@@ -32,8 +32,12 @@ export async function POST(request: Request) {
   });
 
   if (error) {
-    // Publication is additive: the teacher's own copy is already saved in the
-    // workspace, so a failure here must not present as losing their work.
+    // A cross-tenant attempt is a refusal, not a server fault.
+    if (error.code === "42501" || /belongs to another school/i.test(error.message || "")) {
+      return Response.json({ error: error.message, published: false }, { status: 403 });
+    }
+    // Otherwise publication is additive: the teacher's own copy is already saved
+    // in the workspace, so a failure here must not present as losing their work.
     console.error("publish_student_result failed", error);
     return Response.json({ error: error.message, published: false }, { status: 500 });
   }

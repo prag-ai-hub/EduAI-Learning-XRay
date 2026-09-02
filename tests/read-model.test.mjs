@@ -110,3 +110,29 @@ test("every screen that needs the trimmed detail hydrates first", () => {
   assert.match(appUi, /hydrateResource\(worksheet\)/);
   assert.match(appUi, /const detailedResult=await hydrateResult/);
 });
+
+const m16 = read("supabase/migrations/20260905000400_publish_tenant_guard.sql");
+
+test("publishing cannot write into another school's rows", () => {
+  // The upserts conflict on client-generated ids and did not include school_id
+  // in `do update set`, so an existing row kept its owner while its contents
+  // were replaced by the caller's - a silent cross-tenant write answering 200.
+  assert.match(m16, /belongs to another school/);
+  assert.match(m16, /errcode = '42501'/);
+  // Checked before anything is written, so a refusal leaves no partial state.
+  const guard = m16.indexOf("Tenant guard");
+  const firstWrite = m16.indexOf("insert into public.assessments");
+  assert.ok(guard > -1 && guard < firstWrite, "the guard must precede the first write");
+});
+
+test("the guard covers assessments, results and resources", () => {
+  assert.match(m16, /select school_id into v_owner from public\.assessments/);
+  assert.match(m16, /from public\.grade_results\s*\n\s*where assessment_id/);
+  assert.match(m16, /select school_id into v_owner from public\.resources/);
+});
+
+test("a cross-tenant publish is a refusal, not a server fault", () => {
+  const route = read("app/api/publish/route.ts");
+  assert.match(route, /error\.code === "42501"/);
+  assert.match(route, /status: 403/);
+});

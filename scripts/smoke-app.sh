@@ -8,6 +8,7 @@
 
 set -uo pipefail
 cd "$(dirname "$0")/.."
+RUN_ID="smoke-$(date +%s%N)"
 APP=${APP:-http://localhost:3000}
 API=${API:-http://127.0.0.1:54321}
 DB="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
@@ -48,12 +49,18 @@ eq "grade without a provider key charges nothing" "$(curl -s --max-time 40 -X PO
 eq "ledger still empty" "$(q "select count(*) from public.credit_transactions where user_id='$UID_'")" "0"
 
 head "Read model"
-eq "publish accepted" "$(curl -s --max-time 30 -X POST "$APP/api/publish" -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
-     -d '{"assessment":{"id":"a-smoke","title":"Smoke","type":"Quiz","className":"9","section":"A","subject":"Science","maxMarks":10,"date":"2026-08-01","stage":"approved","version":1},
-          "result":{"fileId":"f-smoke","studentName":"Smoke Student","rollNumber":"9A-01","score":7.5,"maxMarks":10,"gaps":[{"concept":"X","mastery":40,"finding":"F"}],"ocrText":"SMOKE-OCR","questionDecisions":[{"id":"q1","rationale":"SMOKE-RATIONALE"}]},
-          "resources":[]}' | grep -c '"published":true')" "1"
-eq "half marks survived" "$(q "select score from public.grade_results where assessment_id='a-smoke'")" "7.50"
-eq "rehydration returns the detail" "$(curl -s --max-time 30 "$APP/api/publish?assessmentId=a-smoke&fileId=f-smoke" -H "Authorization: Bearer $TOK" | grep -c 'SMOKE-OCR')" "1"
+# Ids are per-run. Fixed ids collided across runs, which is how the cross-tenant
+# write in publish_student_result surfaced: a second run's teacher belonged to a
+# different school, and the publish silently updated the first school's row.
+PUBLISH_BODY=$(cat <<JSON
+{"assessment":{"id":"a-$RUN_ID","title":"Smoke","type":"Quiz","className":"9","section":"A","subject":"Science","maxMarks":10,"date":"2026-08-01","stage":"approved","version":1},
+ "result":{"fileId":"f-$RUN_ID","studentName":"Smoke Student","rollNumber":"9A-01","score":7.5,"maxMarks":10,"gaps":[{"concept":"X","mastery":40,"finding":"F"}],"ocrText":"SMOKE-OCR","questionDecisions":[{"id":"q1","rationale":"SMOKE-RATIONALE"}]},
+ "resources":[]}
+JSON
+)
+eq "publish accepted" "$(curl -s --max-time 30 -X POST "$APP/api/publish" -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" -d "$PUBLISH_BODY" | grep -c '"published":true')" "1"
+eq "half marks survived" "$(q "select score from public.grade_results where assessment_id='a-$RUN_ID'")" "7.50"
+eq "rehydration returns the detail" "$(curl -s --max-time 30 "$APP/api/publish?assessmentId=a-$RUN_ID&fileId=f-$RUN_ID" -H "Authorization: Bearer $TOK" | grep -c 'SMOKE-OCR')" "1"
 
 head "Role boundaries"
 eq "teacher blocked from parent portal"   "$(code "$APP/api/parent/children" -H "Authorization: Bearer $TOK")" "403"

@@ -202,8 +202,18 @@ export default function FunctionalEduAIApp(){
   })();return()=>{alive=false;unsubscribe?.()}},[]);
 
   if(loading)return <div className="app-loading"><img src="/brand/logo.png" alt="EduAI Hub"/><b>Preparing your secure workspace…</b></div>;
-  if(!session||needsProfile||!profile)return <TeacherAuth client={client} session={session} needsProfile={needsProfile} error={authError} onProfile={next=>{setProfile(next);setNeedsProfile(false)}}/>;
-  return <WorkspaceApp profile={profile} onSignOut={async()=>{await client.auth.signOut();activeAccessToken="";setSession(null);setProfile(null)}}/>;
+  // Authentication lives on /signin so there is a single entry point and the
+  // post-login destination can depend on the role. /app keeps only the
+  // profile-completion step, because until a profile exists the role is unknown
+  // and there is nowhere role-specific to send anyone.
+  if(!session)return <RedirectToSignIn error={authError}/>;
+  if(needsProfile||!profile)return <TeacherAuth client={client} session={session} needsProfile={needsProfile} error={authError} onProfile={next=>{setProfile(next);setNeedsProfile(false)}}/>;
+  return <WorkspaceApp profile={profile} onSignOut={async()=>{await client.auth.signOut();activeAccessToken="";setSession(null);setProfile(null);location.replace("/signin")}}/>;
+}
+
+function RedirectToSignIn({error}:{error?:string}){
+  useEffect(()=>{const timer=window.setTimeout(()=>location.replace("/signin"),error?2500:0);return()=>window.clearTimeout(timer)},[error]);
+  return <div className="app-loading"><img src="/brand/logo.png" alt="EduAI Hub"/><b>{error||"Taking you to sign in…"}</b></div>;
 }
 
 function WorkspaceApp({profile,onSignOut}:{profile:DemoProfile;onSignOut:()=>Promise<void>}){
