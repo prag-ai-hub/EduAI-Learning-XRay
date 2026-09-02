@@ -1,3 +1,4 @@
+import { OPENAI_MODEL } from "../../../lib/openai";
 import { getAuthenticatedUser, unauthorized } from "../../../lib/supabase-auth";
 
 type GradeRequest = {
@@ -112,7 +113,7 @@ Produce the CBSE diagnostic result and exclude fully correct questions from gaps
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gpt-5.6-sol",
+        model: OPENAI_MODEL,
         messages: [{ role: "system", content: CBSE_DIAGNOSTIC_PROMPT }, { role: "user", content: userPrompt }],
         response_format: { type: "json_object" },
       }),

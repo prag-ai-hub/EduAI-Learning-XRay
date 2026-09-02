@@ -1,3 +1,4 @@
+import { OPENAI_MODEL } from "../../../lib/openai";
 type WorksheetRequestBody = {
   concept?: string;
   concepts?: string[];
@@ -70,7 +71,7 @@ export async function POST(request: Request) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-5.6-sol",
+        model: OPENAI_MODEL,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },

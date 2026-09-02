@@ -1,3 +1,4 @@
+import { OPENAI_MODEL } from "../../../lib/openai";
 type StudyGuideRequest = {
   subject?: string;
   concept?: string;
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gpt-5.6-sol",
+        model: OPENAI_MODEL,
         messages: [
           {
             role: "system",

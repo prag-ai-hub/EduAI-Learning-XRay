@@ -216,10 +216,13 @@ function WorkspaceApp({profile,onSignOut}:{profile:DemoProfile;onSignOut:()=>Pro
   const [toast,setToast]=useState<{kind:"success"|"warning"|"error";text:string}|null>(null);
   const [dark,setDark]=useState(false);
   const [ready,setReady]=useState(false);
-  const [syncStatus,setSyncStatus]=useState<"Loading"|"Syncing"|"Synced"|"Offline">("Loading");
+  const [syncStatus,setSyncStatus]=useState<"Loading"|"Syncing"|"Synced"|"Offline"|"Conflict">("Loading");
+  // Revision last read from the server. Sent with every write so a second
+  // device cannot silently overwrite work saved from the first.
+  const revisionRef=useRef<number|null>(null);
 
-  useEffect(()=>{void(async()=>{let restored:any=null;try{const response=await authFetch("/api/workspace",{cache:"no-store"});if(response.ok){const payload=await response.json();restored=payload.state;setSyncStatus("Synced")}}catch{}try{if(!restored){const cached=localStorage.getItem(`eduai-xray-offline-cache-v1:${profile.id}`);if(cached)restored=JSON.parse(cached);setSyncStatus("Offline")}if(restored){const base=cloneInitial();setState({...base,...restored,students:restored.students||base.students,resources:(restored.resources||base.resources).map((r:Worksheet)=>({...r,answerSheets:r.answerSheets||0,gradedSheets:r.gradedSheets||0})),academicYears:restored.academicYears||base.academicYears,apiLog:restored.apiLog||[]})}else{setState(newTeacherState(profile));setSelectedId("")}setDark(localStorage.getItem("eduai-theme")==="dark")}catch{}setReady(true)})()},[profile.id]);
-  useEffect(()=>{if(!ready)return;localStorage.setItem(`eduai-xray-offline-cache-v1:${profile.id}`,JSON.stringify(state));setSyncStatus("Syncing");const timer=window.setTimeout(()=>{void authFetch("/api/workspace",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({state})}).then(response=>{if(!response.ok)throw new Error("sync failed");setSyncStatus("Synced")}).catch(()=>setSyncStatus("Offline"))},700);return()=>window.clearTimeout(timer)},[state,ready,profile.id]);
+  useEffect(()=>{void(async()=>{let restored:any=null;try{const response=await authFetch("/api/workspace",{cache:"no-store"});if(response.ok){const payload=await response.json();restored=payload.state;revisionRef.current=Number(payload.revision)||0;setSyncStatus("Synced")}}catch{}try{if(!restored){const cached=localStorage.getItem(`eduai-xray-offline-cache-v1:${profile.id}`);if(cached)restored=JSON.parse(cached);setSyncStatus("Offline")}if(restored){const base=cloneInitial();setState({...base,...restored,students:restored.students||base.students,resources:(restored.resources||base.resources).map((r:Worksheet)=>({...r,answerSheets:r.answerSheets||0,gradedSheets:r.gradedSheets||0})),academicYears:restored.academicYears||base.academicYears,apiLog:restored.apiLog||[]})}else{setState(newTeacherState(profile));setSelectedId("")}setDark(localStorage.getItem("eduai-theme")==="dark")}catch{}setReady(true)})()},[profile.id]);
+  useEffect(()=>{if(!ready)return;localStorage.setItem(`eduai-xray-offline-cache-v1:${profile.id}`,JSON.stringify(state));setSyncStatus("Syncing");const timer=window.setTimeout(()=>{void authFetch("/api/workspace",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({state,revision:revisionRef.current})}).then(async response=>{if(response.status===409){const payload=await response.json().catch(()=>({}));revisionRef.current=Number(payload.revision)||revisionRef.current;setSyncStatus("Conflict");return}if(!response.ok)throw new Error("sync failed");const payload=await response.json().catch(()=>({}));if(Number.isFinite(Number(payload.revision)))revisionRef.current=Number(payload.revision);setSyncStatus("Synced")}).catch(()=>setSyncStatus("Offline"))},700);return()=>window.clearTimeout(timer)},[state,ready,profile.id]);
   useEffect(()=>{document.documentElement.dataset.theme=dark?"dark":"light";if(ready)localStorage.setItem("eduai-theme",dark?"dark":"light")},[dark,ready]);
   const selected=state.assessments.find(a=>a.id===selectedId)||state.assessments[0];
   const notify=(text:string,kind:"success"|"warning"|"error"="success")=>{setToast({text,kind});window.setTimeout(()=>setToast(null),3200)};
@@ -246,7 +249,7 @@ function WorkspaceApp({profile,onSignOut}:{profile:DemoProfile;onSignOut:()=>Pro
         <div className="mobile-brand"><img src="/brand/shield.png" alt=""/><b>Learning X-Ray</b></div>
         <div className="crumb"><span>{profile.school}</span><i>›</i><b>{role} workspace</b></div>
         <div className="top-actions">
-          <span className={`sync-indicator ${syncStatus.toLowerCase()}`}>{syncStatus==="Synced"?"● Cloud synced":syncStatus==="Syncing"?"◌ Saving…":syncStatus==="Offline"?"○ Offline · queued":"◌ Loading…"}</span>
+          <span className={`sync-indicator ${syncStatus.toLowerCase()}`} title={syncStatus==="Conflict"?"This workspace was changed on another device. Reload to continue from the latest version.":undefined}>{syncStatus==="Synced"?"● Cloud synced":syncStatus==="Syncing"?"◌ Saving…":syncStatus==="Offline"?"○ Offline · queued":syncStatus==="Conflict"?<button className="link" onClick={()=>location.reload()}>⚠ Changed elsewhere · reload</button>:"◌ Loading…"}</span>
           <span className="credit-badge" title={`${credits.used} of ${credits.total} credits used`}>Credits Remaining: {credits.remaining}</span>
           <span className="demo-role-badge">{profile.label}</span>
           <button className="demo-signout" onClick={()=>void onSignOut()}>Log out</button>
@@ -1182,25 +1185,42 @@ function WorksheetGradingDialog({worksheet,setState,done}:any){
     setGradeError("");setGrading(true);let p=0;
     const timer=window.setInterval(()=>{p=Math.min(90,p+8);setProgress(p)},200);
     try{
+      // /api/grade works from teacher-validated OCR text, not raw file bytes. This
+      // dialog used to post fileBase64, which the route ignores, so every run
+      // failed with "Validate the answer-sheet OCR text before analysis."
+      // The worksheet itself is the question paper: it is sent as text/plain so
+      // it is parsed locally instead of costing a Mistral OCR call.
+      const paperText=worksheetQuestionPaperText(worksheet);
+      const schemeText=worksheetMarkingSchemeText(worksheet?.content);
       const graded_results=await Promise.all(files.map(async file=>{
         const fileBase64=await blobToBase64(file);
+        const studentName=guessNameFromFile(file.name);
+        const ocrResponse=await authFetch("/api/ocr",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({documents:[
+          {id:"answerSheet",name:file.name,base64:fileBase64,mimeType:file.type||"application/pdf"},
+          {id:"questionPaper",name:`${worksheet?.title||"Worksheet"}.txt`,base64:base64FromText(paperText),mimeType:"text/plain"},
+        ]})});
+        const ocrPayload=await ocrResponse.json();
+        logApiTiming(setState,ocrPayload?.timing);
+        if(!ocrResponse.ok)throw new Error(ocrPayload?.error||`Text extraction failed for ${file.name}`);
         const res=await authFetch("/api/grade",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-          subject:worksheet?.concept||"General",
-          studentName:guessNameFromFile(file.name),
+          subject:worksheet?.subject||worksheet?.concept||"General",
+          className:worksheet?.grade||"",
+          studentName,
           fileName:file.name,
-          maxMarks:10,
-          answerKey:"",
-          rubric:"",
-          concepts:worksheet?.concept?[worksheet.concept]:[],
-          fileBase64,
-          mimeType:file.type
+          documentRole:"Ungraded answer sheet",
+          maxMarks:worksheetMaxMarks(worksheet?.content),
+          rubric:worksheet?.template||"",
+          ocrText:ocrPayload.documents?.answerSheet?.text,
+          questionPaperText:ocrPayload.documents?.questionPaper?.text,
+          markingSchemeText:schemeText,
+          operationKey:`worksheet:${worksheet?.id||"adhoc"}:${stableKey(file.name+String(file.size))}`
         })});
         const payload=await res.json();
         logApiTiming(setState,payload?.timing);
         if(!res.ok)throw new Error(payload?.error||`Grading failed for ${file.name}`);
         const gaps=payload.gaps||[];
         const mastery=gaps.length?Math.round(gaps.reduce((s:number,g:any)=>s+g.mastery,0)/gaps.length):Math.round((payload.score/Math.max(1,payload.maxMarks))*100);
-        return {studentName:guessNameFromFile(file.name),score:payload.score,maxMarks:payload.maxMarks,mastery};
+        return {studentName,score:payload.score,maxMarks:payload.maxMarks,mastery};
       }));
       clearInterval(timer);setProgress(100);setResults(graded_results);setGraded(true);
       setState((s:DemoState)=>({...s,resources:s.resources.map(r=>r.id===worksheet.id?{...r,answerSheets:(r.answerSheets||0)+files.length,gradedSheets:(r.gradedSheets||0)+files.length}:r),events:[`${files.length} worksheet answer sheets graded with EduAI · ${worksheet.title}`,...s.events]}));
@@ -1428,6 +1448,37 @@ function worksheetContent(r:any,content?:{mcqQuestions:{question:string;options:
   const mcqLines=(content?.mcqQuestions||[]).map((q,i)=>`${i+1}. ${q.question} ${q.options.map((o,j)=>`${String.fromCharCode(65+j)}) ${o}`).join(" ")}`).join("\n");
   const subjLines=(content?.subjectiveQuestions||[]).map((q,i)=>`${i+1}. ${q.question}`).join("\n");
   return `${r.title}\n\nTarget learning gap: ${r.concept||"Teacher-defined concept"}\nTemplate: ${r.template||"Custom"}\nDifficulty: ${r.difficulty||"Mixed"}\n\nMULTIPLE CHOICE (${content?.mcqQuestions.length||0})\n${mcqLines||"(none)"}\n\nSUBJECTIVE (${content?.subjectiveQuestions.length||0})\n${subjLines||"(none)"}\n\nTeacher: __________________  Student: __________________  Date: __________`;
+}
+function base64FromText(value:string){
+  const bytes=new TextEncoder().encode(value);
+  let binary="";for(const byte of bytes)binary+=String.fromCharCode(byte);
+  return btoa(binary);
+}
+function stableKey(value:string){
+  let hash=0;for(let i=0;i<value.length;i++)hash=((hash<<5)-hash+value.charCodeAt(i))|0;
+  return Math.abs(hash).toString(36);
+}
+// One mark per multiple-choice question, two per written response - a stated
+// default so the model has a total to reconcile against, which /api/grade
+// requires the question marks to sum to exactly.
+function worksheetMaxMarks(content?:WorksheetContent){
+  return Math.max(1,(content?.mcqQuestions?.length||0)+(content?.subjectiveQuestions?.length||0)*2);
+}
+function worksheetQuestionPaperText(worksheet:any){
+  const content:WorksheetContent|undefined=worksheet?.content;
+  const mcq=(content?.mcqQuestions||[]).map((q,i)=>`Q${i+1}. (1 mark) ${q.question}\n${q.options.map((o,j)=>`   ${String.fromCharCode(65+j)}) ${o}`).join("\n")}`);
+  const offset=(content?.mcqQuestions?.length||0);
+  const written=(content?.subjectiveQuestions||[]).map((q,i)=>`Q${offset+i+1}. (2 marks) ${q.question}`);
+  return [`${worksheet?.title||"Practice worksheet"}`,
+          `Subject: ${worksheet?.subject||"General"}    Class: ${worksheet?.grade||"Not stated"}`,
+          `Total marks: ${worksheetMaxMarks(content)}`,"",
+          ...mcq,...written].join("\n");
+}
+function worksheetMarkingSchemeText(content?:WorksheetContent){
+  const mcq=(content?.mcqQuestions||[]).map((q,i)=>`Q${i+1}. (1 mark) Correct option: ${String.fromCharCode(65+q.correctIndex)} - ${q.options[q.correctIndex]}`);
+  const offset=(content?.mcqQuestions?.length||0);
+  const written=(content?.subjectiveQuestions||[]).map((q,i)=>`Q${offset+i+1}. (2 marks) Model answer: ${q.modelAnswer}\n   Award 1 mark for a correct method or key idea, 1 mark for a complete and accurate answer.`);
+  return ["MARKING SCHEME","",...mcq,...written].join("\n");
 }
 function downloadText(name:string,content:string){
   const rows=content.trim().split(/\r?\n/).map(line=>line.split(","));

@@ -45,3 +45,95 @@ export function requireAdmin(profile:AuthorizedProfile|Response){
     ? Response.json({error:"Administrator access is required."},{status:403})
     : null;
 }
+
+/**
+ * Tenant isolation. A SchoolAdmin or Teacher may only touch their own school.
+ *
+ * A SuperAdmin is NOT granted implicit cross-tenant access: they need an
+ * unexpired row in support_access_grants for that school, and the read is
+ * recorded in audit_events. This is the rule from the role matrix §4 — without
+ * it "SuperAdmin" quietly becomes "can read every school's student data".
+ */
+export async function requireSchoolScope(profile:AuthorizedProfile|Response, schoolId:string|null|undefined){
+  if(profile instanceof Response)return profile;
+  if(!schoolId)return Response.json({error:"A school is required for this action."},{status:400});
+  if(profile.school_id===schoolId)return null;
+
+  if(profile.role!=="SuperAdmin"){
+    return Response.json({error:"This record belongs to another school."},{status:403});
+  }
+
+  const db=getSupabaseServer();
+  const {data,error}=await db.from("support_access_grants")
+    .select("id,reason,expires_at")
+    .eq("granted_to",profile.id).eq("school_id",schoolId)
+    .is("revoked_at",null).gt("expires_at",new Date().toISOString())
+    .limit(1).maybeSingle();
+  if(error&&error.code!=="PGRST116")return Response.json({error:error.message},{status:500});
+  if(!data){
+    return Response.json({error:"Cross-tenant access requires an active support grant."},{status:403});
+  }
+
+  // Best effort: the grant is what authorises the read, so a failure to write
+  // the audit row must not silently deny an authorised action. It is logged.
+  try{
+    await db.from("audit_events").insert({
+      id:crypto.randomUUID(), school_id:schoolId, actor_id:profile.id,
+      action:"support.cross_tenant_read", entity_type:"school", entity_id:schoolId,
+      detail_json:{grantId:data.id,reason:data.reason,expiresAt:data.expires_at},
+    });
+  }catch(cause){ console.error("support.cross_tenant_read audit write failed",cause) }
+  return null;
+}
+
+/**
+ * Parent scoping. There is no other path from a parent to a student: access
+ * exists only where parent_student_links says it does.
+ */
+export async function requireLinkedChild(profile:AuthorizedProfile|Response, studentId:string|null|undefined){
+  if(profile instanceof Response)return profile;
+  if(!studentId)return Response.json({error:"A student is required for this action."},{status:400});
+  if(profile.role!=="Parent")return Response.json({error:"This area is for parent accounts."},{status:403});
+
+  const {data,error}=await getSupabaseServer().from("parent_student_links")
+    .select("id").eq("parent_user_id",profile.id).eq("student_id",studentId)
+    .eq("status","active").limit(1).maybeSingle();
+  if(error&&error.code!=="PGRST116")return Response.json({error:error.message},{status:500});
+  return data?null:Response.json({error:"You do not have access to this student."},{status:403});
+}
+
+/**
+ * School lifecycle gate. Blocks new billable work while a school is Pending,
+ * Suspended or Closed — but never blocks reads, so a school can always see its
+ * own history and the invoice it needs to pay.
+ */
+export async function requireActiveSchool(profile:AuthorizedProfile|Response){
+  if(profile instanceof Response)return profile;
+  if(profile.role==="SuperAdmin")return null;
+  if(!profile.school_id)return Response.json({error:"Your profile is not assigned to a school."},{status:403});
+
+  const {data,error}=await getSupabaseServer().from("schools")
+    .select("status").eq("id",profile.school_id).maybeSingle();
+  // schools.status arrives in M7. Before that every school is implicitly active.
+  if(error){
+    if(/status|column .* does not exist/i.test(error.message||"")||error.code==="42703")return null;
+    return Response.json({error:error.message},{status:500});
+  }
+  if(!data||data.status==="Active")return null;
+  const message=data.status==="Suspended"
+    ? "This school's account is suspended. Existing work stays available; contact your administrator to resume new analysis."
+    : data.status==="Pending"
+      ? "This school is awaiting approval. New analysis becomes available once it is approved."
+      : "This school's account is closed.";
+  return Response.json({error:message,schoolStatus:data.status},{status:403});
+}
+
+/**
+ * Entitlement gate. Deliberately unimplemented: it must resolve through
+ * public.subscriptions, which does not exist until M9. Wiring it to a stub that
+ * returns null would create a gate that silently permits everything, which is
+ * worse than no gate at all — so callers must not use it yet.
+ */
+export async function requireEntitlement(_profile:AuthorizedProfile|Response, _feature:string):Promise<Response|null>{
+  throw new Error("requireEntitlement is not implemented until M9 (plans + subscriptions). Do not call it yet.");
+}

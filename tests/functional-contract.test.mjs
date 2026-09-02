@@ -453,7 +453,11 @@ test("Mistral OCR evidence drives OpenAI learning resources", () => {
   assert.match(ocr, /extractDocumentText/);
   assert.match(grade, /pageNumber/);
   assert.match(extraction, /mistral-ocr-latest/);
-  assert.match(grade, /gpt-5\.6-sol/);
+  // The model id moved out of the routes into lib/openai.ts (one env var, one
+  // default) so it can be corrected in one place and verified by
+  // /api/system-health. The route must use that constant, not a literal.
+  assert.match(grade, /model: OPENAI_MODEL/);
+  assert.doesNotMatch(grade, /gpt-5\.6-sol/);
   assert.match(worksheet, /Subject: \$\{subject\}/);
   assert.match(studyGuide, /Answer-sheet OCR evidence/);
   assert.match(studyGuide, /Do not introduce mathematics examples/);

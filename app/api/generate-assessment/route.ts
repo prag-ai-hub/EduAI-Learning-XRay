@@ -1,3 +1,4 @@
+import { OPENAI_MODEL } from "../../../lib/openai";
 import { extractDocumentText, type TextDocument } from "../../../lib/document-text";
 import { getAuthenticatedUser, unauthorized } from "../../../lib/supabase-auth";
 
@@ -51,7 +52,7 @@ The question paper must clearly show instructions, question numbers, marks per q
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gpt-5.6-sol",
+        model: OPENAI_MODEL,
         messages: [
           { role: "system", content: "You are an expert assessment designer. Produce rigorous, age-appropriate assessments and exact marking references." },
           { role: "user", content: prompt },
