@@ -13,17 +13,21 @@ import environ
 BASE_DIR = Path(__file__).resolve().parents[2]
 
 env = environ.Env(
-    DJANGO_DEBUG=(bool, False),
-    DJANGO_ALLOWED_HOSTS=(list, []),
+    DEBUG=(bool, False),
+    ALLOWED_HOSTS=(list, []),
     CORS_ALLOWED_ORIGINS=(list, []),
-    DJANGO_DB_SCHEMA=(str, "django"),
-    DJANGO_DB_CONN_MAX_AGE=(int, 60),
+    CSRF_TRUSTED_ORIGINS=(list, []),
+    CORS_ALLOW_CREDENTIALS=(bool, False),
+    DB_PORT=(int, 5432),
+    DB_SSLMODE=(str, "require"),
+    DB_SCHEMA=(str, "django"),
+    DB_CONN_MAX_AGE=(int, 60),
 )
 environ.Env.read_env(BASE_DIR / ".env")
 
-SECRET_KEY = env("DJANGO_SECRET_KEY")
-DEBUG = env("DJANGO_DEBUG")
-ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS")
+SECRET_KEY = env("SECRET_KEY")
+DEBUG = env("DEBUG")
+ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 
 # --------------------------------------------------------------------------
 # Applications
@@ -96,10 +100,18 @@ TEMPLATES = [
 # --------------------------------------------------------------------------
 DATABASES = {
     "default": {
-        **env.db("DATABASE_URL"),
-        "CONN_MAX_AGE": env("DJANGO_DB_CONN_MAX_AGE"),
+        "ENGINE": env("DB_ENGINE", default="django.db.backends.postgresql"),
+        "NAME": env("DB_NAME"),
+        "USER": env("DB_USER"),
+        "PASSWORD": env("DB_PASSWORD"),
+        "HOST": env("DB_HOST"),
+        "PORT": env("DB_PORT"),
+        "CONN_MAX_AGE": env("DB_CONN_MAX_AGE"),
         "OPTIONS": {
-            "options": f"-c search_path={env('DJANGO_DB_SCHEMA')},public",
+            # Django's own bookkeeping tables go in DB_SCHEMA; reads of the
+            # application tables fall through to public, which stays second.
+            "options": f"-c search_path={env('DB_SCHEMA')},public",
+            **({"sslmode": env("DB_SSLMODE")} if env("DB_SSLMODE") else {}),
         },
     }
 }
@@ -146,6 +158,12 @@ REST_FRAMEWORK = {
 # --------------------------------------------------------------------------
 # Supabase auth bridge
 # --------------------------------------------------------------------------
+# Where this service answers, and where the web app lives. Used to build
+# absolute links in outbound email and in API documentation - a relative link
+# in an email goes nowhere.
+API_BASE_URL = env("API_BASE_URL", default="")
+FRONTEND_URL = env("FRONTEND_URL", default="")
+
 SUPABASE_URL = env("SUPABASE_URL")
 SUPABASE_JWT_SECRET = env("SUPABASE_JWT_SECRET")
 SUPABASE_JWT_ALGORITHMS = ["HS256"]
@@ -156,6 +174,13 @@ SUPABASE_JWT_AUDIENCE = env("SUPABASE_JWT_AUDIENCE", default="authenticated")
 # --------------------------------------------------------------------------
 OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
 OPENAI_MODEL = env("OPENAI_MODEL", default="")
+OPENAI_BASE_URL = env("OPENAI_BASE_URL", default="https://api.openai.com/v1")
+
+# OCR for scanned answer sheets. Same rule as the OpenAI key: server-side only,
+# never returned in a response.
+MISTRAL_API_KEY = env("MISTRAL_API_KEY", default="")
+MISTRAL_BASE_URL = env("MISTRAL_BASE_URL", default="https://api.mistral.ai/v1")
+MISTRAL_OCR_MODEL = env("MISTRAL_OCR_MODEL", default="mistral-ocr-latest")
 
 PAYMENT_GATEWAY_KEY_ID = env("PAYMENT_GATEWAY_KEY_ID", default="")
 PAYMENT_GATEWAY_KEY_SECRET = env("PAYMENT_GATEWAY_KEY_SECRET", default="")
@@ -165,7 +190,13 @@ PAYMENT_GATEWAY_WEBHOOK_SECRET = env("PAYMENT_GATEWAY_WEBHOOK_SECRET", default="
 # CORS - the Cloudflare-hosted frontend origin only.
 # --------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
-CORS_ALLOW_CREDENTIALS = False  # the frontend sends a bearer token, not cookies
+# The API takes a bearer token, not a cookie, so credentials stay off unless an
+# operator has a specific reason. Turning it on with a wildcard origin is the
+# combination browsers refuse outright.
+CORS_ALLOW_CREDENTIALS = env("CORS_ALLOW_CREDENTIALS")
+# Origins allowed to submit unsafe methods. Needed for the browsable API and
+# the admin when either is reached through a tunnel or a non-default host.
+CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
 
 # --------------------------------------------------------------------------
 # I18N / static

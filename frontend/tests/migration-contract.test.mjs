@@ -131,11 +131,14 @@ test("no credit is charged before the provider key is known to exist", () => {
   // The provider-key check uses `return`, not `throw`, so it never reaches the
   // catch block that refunds. Charging first therefore lost the teacher a credit
   // for work that never ran. The check must precede the charge.
-  const keyCheck = gradeRoute.indexOf('OPENAI_API_KEY is not configured');
+  // The key itself now lives in the Django service, so the precondition is
+  // that the service is configured rather than that a key is present. The
+  // ordering requirement is unchanged.
+  const keyCheck = gradeRoute.indexOf('aiProxyConfigured()');
   const charge   = gradeRoute.indexOf('rpc("consume_credit"');
-  assert.ok(keyCheck > -1 && charge > -1, "both the key check and the charge must exist");
+  assert.ok(keyCheck > -1 && charge > -1, "both the availability check and the charge must exist");
   assert.ok(keyCheck < charge,
-    "the provider-key check must run before consume_credit, or an early return leaks a credit");
+    "the availability check must run before consume_credit, or an early return leaks a credit");
 });
 
 // ---------------------------------------------------------------- M7

@@ -1,3 +1,4 @@
+import { ocr as ocrViaProxy } from "./ai-proxy";
 import { unzipSync } from "fflate";
 
 export type TextDocument = { name: string; base64: string; mimeType: string };
@@ -47,26 +48,24 @@ async function extractSpreadsheet(bytes: Uint8Array) {
   return workbook.SheetNames.map(name => `# ${name}\n${XLSX.utils.sheet_to_csv(workbook.Sheets[name])}`).join("\n\n").trim();
 }
 
-async function extractWithMistral(document: TextDocument, apiKey: string) {
+/**
+ * OCR through the Django proxy. The Mistral key lives there, not here.
+ *
+ * The file is sent as a base64 data URL rather than a fetchable address: it is
+ * a student's answer sheet in private storage, and handing a provider a URL it
+ * could fetch later is a different exposure from handing it bytes once.
+ */
+async function extractWithProxy(document: TextDocument, request: Request) {
   const dataUrl = `data:${document.mimeType || "application/octet-stream"};base64,${document.base64}`;
-  const source = document.mimeType === "application/pdf" || extension(document.name) === "pdf"
-    ? { type: "document_url", document_url: dataUrl }
-    : { type: "image_url", image_url: dataUrl };
+  const isPdf = document.mimeType === "application/pdf" || extension(document.name) === "pdf";
   const startedAt = Date.now();
-  const response = await fetch("https://api.mistral.ai/v1/ocr", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "mistral-ocr-latest", document: source }),
-  });
+  const { text } = await ocrViaProxy(request, { kind: isPdf ? "document" : "image", dataUrl });
   const ms = Date.now() - startedAt;
-  if (!response.ok) throw new Error(`Mistral OCR failed for ${document.name}: ${await response.text()}`);
-  const data = await response.json();
-  const text = (data?.pages || []).map((page: { markdown?: string }, index: number) => `--- Page ${index + 1} ---\n${page.markdown || ""}`).join("\n\n").trim();
-  if (!text) throw new Error(`No readable text was found in ${document.name}.`);
+  if (!text.trim()) throw new Error(`No readable text was found in ${document.name}.`);
   return { text, ms, provider: "mistral" as const };
 }
 
-export async function extractDocumentText(document: TextDocument, mistralApiKey?: string) {
+export async function extractDocumentText(document: TextDocument, request: Request) {
   const ext = extension(document.name);
   const bytes = bytesFromBase64(document.base64);
   const directText = document.mimeType.startsWith("text/") || ["md","markdown","txt","csv","tsv","json","xml","yaml","yml","html","htm","rtf"].includes(ext);
@@ -89,6 +88,5 @@ export async function extractDocumentText(document: TextDocument, mistralApiKey?
     if (!text) throw new Error(`No readable cells were found in ${document.name}.`);
     return { text, ms: 0, provider: "local" as const };
   }
-  if (!mistralApiKey) throw new Error(`OCR is not configured for ${document.name}.`);
-  return extractWithMistral(document, mistralApiKey);
+  return extractWithProxy(document, request);
 }

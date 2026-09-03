@@ -5,8 +5,8 @@ from .base import env
 
 DEBUG = True
 
-# Override via DJANGO_ALLOWED_HOSTS when running in a container.
-ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+# Override via ALLOWED_HOSTS when running in a container or a tunnel.
+ALLOWED_HOSTS = env("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
 # The Next.js dev server.
 CORS_ALLOWED_ORIGINS = env(

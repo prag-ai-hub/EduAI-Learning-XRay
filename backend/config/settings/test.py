@@ -8,14 +8,21 @@ environment values still win: these are `setdefault` calls.
 
 import os
 
-os.environ.setdefault("DJANGO_SECRET_KEY", "test-secret-key-not-used-outside-tests")
-os.environ.setdefault("DJANGO_DEBUG", "False")
-os.environ.setdefault("DJANGO_ALLOWED_HOSTS", "testserver,localhost")
-os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:54322/postgres")
+os.environ.setdefault("SECRET_KEY", "test-secret-key-not-used-outside-tests")
+os.environ.setdefault("DEBUG", "False")
+os.environ.setdefault("ALLOWED_HOSTS", "testserver,localhost")
+os.environ.setdefault("DB_NAME", "postgres")
+os.environ.setdefault("DB_USER", "postgres")
+os.environ.setdefault("DB_PASSWORD", "postgres")
+os.environ.setdefault("DB_HOST", "127.0.0.1")
+os.environ.setdefault("DB_PORT", "54322")
+# The local stack speaks plain TCP; a hosted pooler needs sslmode=require.
+os.environ.setdefault("DB_SSLMODE", "")
 os.environ.setdefault("SUPABASE_URL", "http://127.0.0.1:54321")
 os.environ.setdefault("SUPABASE_JWT_SECRET", "test-jwt-secret-at-least-32-characters-long")
 os.environ.setdefault("SUPABASE_JWT_AUDIENCE", "authenticated")
 os.environ.setdefault("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
+os.environ.setdefault("CSRF_TRUSTED_ORIGINS", "http://localhost:3000")
 
 from .base import *  # noqa: E402,F401,F403
 

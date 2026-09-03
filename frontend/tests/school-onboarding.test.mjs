@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+
+const filesUnder = dir => readdirSync(new URL(`../${dir}`, import.meta.url), { recursive: true, withFileTypes: true })
+  .filter(e => e.isFile() && /\.(ts|tsx)$/.test(e.name))
+  .map(e => `${e.parentPath.split("/frontend/")[1]}/${e.name}`);
 
 const read = p => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 const client = read("lib/django-api.ts");
@@ -106,4 +110,34 @@ test("new surfaces introduce no new CSS classes", () => {
   }
   const missing = [...used].filter(name => !defined.has(name));
   assert.deepEqual(missing, [], `new UI needs undefined classes: ${missing.join(", ")}`);
+});
+
+// ---------------------------------------------------------------- credentials
+
+test("the frontend holds no AI provider credential", () => {
+  // The keys live in the Django service. A route that reads one again would
+  // reintroduce a second place to rotate and a second place to leak from.
+  const sources = ["app", "lib"].flatMap(dir => filesUnder(dir));
+  const offenders = sources.filter(file => {
+    const src = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    return /OPENAI_API_KEY|MISTRAL_API_KEY|api\.openai\.com|api\.mistral\.ai/.test(src);
+  });
+  assert.deepEqual(offenders, [], `provider credentials reappeared in: ${offenders.join(", ")}`);
+});
+
+test("AI calls go through the analysis service", () => {
+  for (const route of ["app/api/grade/route.ts", "app/api/generate-worksheet/route.ts",
+                       "app/api/generate-study-guide/route.ts", "app/api/generate-assessment/route.ts"]) {
+    assert.match(read(route), /from "\.\.\/\.\.\/\.\.\/lib\/ai-proxy"/, `${route} bypasses the proxy`);
+  }
+});
+
+test("the grading prompt's student name is redacted before it leaves", () => {
+  // The confirmed finding: grade/route.ts embeds the real student name. The
+  // proxy swaps it for a placeholder and maps it back on the response.
+  const grade = read("app/api/grade/route.ts");
+  assert.match(grade, /redact: body\.studentName\?\.trim\(\)/);
+  // The "Student" fallback is a label, not an identity - redacting it would
+  // mangle every other use of the word in the prompt.
+  assert.match(grade, /\? \{ student_name: body\.studentName\.trim\(\) \} : \{\}/);
 });

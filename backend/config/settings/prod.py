@@ -5,7 +5,7 @@ from .base import env
 
 DEBUG = False
 
-ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS")  # explicit, no wildcard fallback
+ALLOWED_HOSTS = env("ALLOWED_HOSTS")  # explicit, no wildcard fallback
 
 # --- Transport security ---------------------------------------------------
 SECURE_SSL_REDIRECT = True
@@ -45,10 +45,12 @@ CACHES = {
     )
 }
 
+# Django's setting names are fixed; the environment names follow the house
+# MAIL_* convention so one operator reads the same keys across services.
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = env("EMAIL_HOST", default="")
-EMAIL_PORT = env.int("EMAIL_PORT", default=587)
-EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
-EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
-EMAIL_USE_TLS = True
-DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="no-reply@eduai.local")
+EMAIL_HOST = env("MAIL_SERVER", default="")
+EMAIL_PORT = env.int("MAIL_PORT", default=587)
+EMAIL_HOST_USER = env("MAIL_USERNAME", default="")
+EMAIL_HOST_PASSWORD = env("MAIL_PASSWORD", default="")
+EMAIL_USE_TLS = env.bool("MAIL_USE_TLS", default=True)
+DEFAULT_FROM_EMAIL = env("MAIL_DEFAULT_SENDER", default="no-reply@eduaihub.in")

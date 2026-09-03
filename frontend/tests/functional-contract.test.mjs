@@ -437,7 +437,9 @@ test("document extraction reads text, Word, OpenDocument and spreadsheet uploads
     assert.ok(extraction.includes(capability), `missing document extraction support: ${capability}`);
   }
   const ocr = readFileSync(new URL("../app/api/ocr/route.ts", import.meta.url), "utf8");
-  assert.match(ocr, /extractDocumentText\(document, apiKey\)/);
+  // The Mistral key moved to the analysis service; the route forwards the
+  // request so the proxy can authorise the caller.
+  assert.match(ocr, /extractDocumentText\(document, request\)/);
   assert.match(app, /accept=\{DOCUMENT_ACCEPT\}/);
 });
 
@@ -462,11 +464,11 @@ test("Mistral OCR evidence drives OpenAI learning resources", () => {
   const studyGuide = readFileSync(new URL("../app/api/generate-study-guide/route.ts", import.meta.url), "utf8");
   assert.match(ocr, /extractDocumentText/);
   assert.match(grade, /pageNumber/);
-  assert.match(extraction, /mistral-ocr-latest/);
-  // The model id moved out of the routes into lib/openai.ts (one env var, one
-  // default) so it can be corrected in one place and verified by
-  // /api/system-health. The route must use that constant, not a literal.
-  assert.match(grade, /model: OPENAI_MODEL/);
+  // OCR goes through the analysis service, which holds the Mistral key and
+  // names the model. The frontend sends bytes, not a model id.
+  assert.match(extraction, /ocrViaProxy\(request/);
+  assert.doesNotMatch(extraction, /api\.mistral\.ai/);
+  assert.doesNotMatch(grade, /model:/);
   assert.doesNotMatch(grade, /gpt-5\.6-sol/);
   assert.match(worksheet, /Subject: \$\{subject\}/);
   assert.match(studyGuide, /Answer-sheet OCR evidence/);

@@ -47,7 +47,7 @@ python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements/dev.txt
 cp .env.example .env          # then fill it in
 
-psql "$DATABASE_URL" -f scripts/bootstrap_schema.sql   # once per database
+psql "$PSQL_URL" -f scripts/bootstrap_schema.sql       # once per database
 python manage.py migrate
 python manage.py runserver 8000
 ```
@@ -64,6 +64,12 @@ quietly works in production. `manage.py` defaults to `config.settings.dev`;
 **No secret has a working default.** `base.py` reads every credential through
 `django-environ` with no fallback, so a missing value fails at boot rather than
 silently running with a placeholder.
+
+**Environment names follow the house convention** shared with the other EduAI
+services: unprefixed Django core settings (`SECRET_KEY`, `DEBUG`,
+`ALLOWED_HOSTS`), split database parts (`DB_HOST`, `DB_NAME`, ...) rather than
+one URL, and `MAIL_*` for SMTP. Django's own setting names are fixed, so
+`prod.py` maps `MAIL_SERVER` onto `EMAIL_HOST` and so on.
 
 **Django does not own the application schema.** The SQL migrations in
 `../supabase/migrations` do. Django's own tables (`django_migrations`,

@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 const read = p => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 const authz        = read("lib/authorization.ts");
 const shareTokens  = read("lib/share-tokens.ts");
-const openaiLib    = read("lib/openai.ts");
+const djangoSettings = read("../backend/config/settings/base.py");
+const aiService      = read("../backend/apps/aiproxy/services.py");
 const shareRead    = read("app/api/shares/[token]/route.ts");
 const workspace    = read("app/api/workspace/route.ts");
 const health       = read("app/api/system-health/route.ts");
@@ -71,24 +72,29 @@ test("H6: the extraction withholds OCR text and AI rationale", () => {
 
 // ---------------------------------------------------------------- M1
 
-test("M1: the model id lives in one place, not four route files", () => {
-  assert.match(openaiLib, /export const OPENAI_MODEL/);
-  assert.match(openaiLib, /process\.env\.OPENAI_MODEL/);
+test("M1: the model id lives in one place - now the analysis service", () => {
+  // Originally hardcoded in four route files; then one frontend constant; now
+  // a backend setting, because the model belongs with the key that must be
+  // able to use it. A caller cannot name a model at all.
+  assert.match(djangoSettings, /OPENAI_MODEL = env\("OPENAI_MODEL"/);
+  assert.match(aiService, /model = settings\.OPENAI_MODEL/);
   for (const route of ["app/api/grade/route.ts","app/api/generate-assessment/route.ts",
                        "app/api/generate-worksheet/route.ts","app/api/generate-study-guide/route.ts"]) {
     const src = read(route);
-    assert.match(src, /model: OPENAI_MODEL/, `${route} should use the shared constant`);
-    assert.doesNotMatch(src, /model: "gpt-5\.6-sol"/, `${route} still hardcodes the model`);
+    assert.doesNotMatch(src, /model:/, `${route} must not name a model - the proxy chooses it`);
+    assert.doesNotMatch(src, /gpt-5\.6-sol/, `${route} still hardcodes the model`);
   }
 });
 
 test("M1: system health verifies the model exists, not just that the API answers", () => {
   // A reachable provider with a wrong model id fails every grading run while
   // looking healthy.
-  assert.match(openaiLib, /export async function verifyModel/);
-  assert.match(openaiLib, /is not available to this API key/);
-  assert.match(health, /verifyModel\(apiKey\)/);
-  assert.match(health, /model,/);
+  assert.match(aiService, /def verify_model/);
+  assert.match(aiService, /is not available to this API key/);
+  // The frontend asks the service rather than probing the provider itself: it
+  // no longer holds a key to probe with.
+  assert.match(health, /proxyHealth\(request\)/);
+  assert.match(health, /model/);
 });
 
 // ---------------------------------------------------------------- M3

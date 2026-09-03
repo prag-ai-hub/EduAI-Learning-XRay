@@ -77,6 +77,13 @@ class Capability:
     PAYMENT_INVOICE_DOWNLOAD = "payment.invoice.download"
     PAYMENT_REFUND_ISSUE = "payment.refund.issue"
 
+    # --- AI proxy -------------------------------------------------------------
+    # Server-side model access. Held by the roles that do teaching work, because
+    # every AI call in this product is part of producing or diagnosing student
+    # work - and because the key being proxied is billable.
+    AI_COMPLETION_RUN = "ai.completion.run"
+    AI_OCR_RUN = "ai.ocr.run"
+
     # --- Parent portal ---------------------------------------------------------
     PARENT_CHILD_LINK = "parent.child.link"
     PARENT_CHILDREN_LIST = "parent.children.list"
@@ -160,6 +167,10 @@ _TEACHER = frozenset(
         C.TEACHING_INTERVENTION_MANAGE,
         C.TEACHING_PARENT_INVITE,
         C.TEACHING_ASSESSMENT_DELETE,
+        # The AI proxy: grading, OCR and resource generation are all teacher
+        # work, and the key being proxied is billable.
+        C.AI_COMPLETION_RUN,
+        C.AI_OCR_RUN,
         C.STUDENT_REPORT_READ,
         C.STUDENT_RESOURCES_READ,
         C.STUDENT_RAW_FILE_READ,

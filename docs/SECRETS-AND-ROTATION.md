@@ -18,23 +18,33 @@ Two rules apply without exception:
 
 | Secret | Held in | Reaches | Rotate | Blast radius if leaked |
 | --- | --- | --- | --- | --- |
-| `DJANGO_SECRET_KEY` | `backend/.env` | Django only | 90 days | Signed values forgeable. The API is token-authenticated and stateless, so the practical impact is low, but rotate anyway. |
-| `DATABASE_URL` | `backend/.env` | Django only | 90 days, and on any staff departure | **Total.** Full read/write on the shared Postgres, bypassing every application check. |
+| `SECRET_KEY` | `backend/.env` | Django only | 90 days | Signed values forgeable. The API is token-authenticated and stateless, so the practical impact is low, but rotate anyway. |
+| `DB_PASSWORD` | `backend/.env` | Django only | 90 days, and on any staff departure | **Total.** Full read/write on the shared Postgres, bypassing every application check. |
 | `SUPABASE_JWT_SECRET` | `backend/.env` | Django only | With the Supabase project's JWT secret | **Total authentication bypass.** Anyone holding it can mint a token for any user id. See the note below. |
 | `SUPABASE_SECRET_KEY` (service role) | root `.env` | Next.js server routes | 90 days | Full database access, and it is also the HMAC key for parent share links — rotating it invalidates outstanding links. |
 | `SUPABASE_PUBLISHABLE_KEY` (anon) | root `.env` | Served to the browser | On project rotation | Low: it is public by design and constrained by RLS. |
-| `OPENAI_API_KEY` | both `.env` files | Server-side only | 90 days | Billable spend against the account. Never returned in an API response. |
-| `MISTRAL_API_KEY` | root `.env` | Next.js OCR route | 90 days | Billable spend. |
+| `OPENAI_API_KEY` | `backend/.env` only | The Django AI proxy | 90 days | Billable spend against the account. Never returned in an API response. |
+| `MISTRAL_API_KEY` | `backend/.env` only | The Django AI proxy | 90 days | Billable spend. |
 | `PAYMENT_GATEWAY_KEY_SECRET` | `backend/.env` | Django only | 90 days, immediately on suspicion | Ability to move money. Test and live keys are separated by environment and never shipped to the browser. |
 | `PAYMENT_GATEWAY_WEBHOOK_SECRET` | `backend/.env` | Django only | With the gateway key | Forged webhooks accepted as genuine, which drives subscription and payment state. |
 | Google OAuth client secret | root `.env` | Local Supabase stack only | See incident below | Sign-in as any Google user against the local stack. In production this lives in the Supabase dashboard, not in a file. |
-| `EMAIL_HOST_PASSWORD` | `backend/.env` | Django only | 180 days | Outbound mail sent as the product. |
+| `MAIL_PASSWORD` | `backend/.env` | Django only | 180 days | Outbound mail sent as the product. |
 
 `SUPABASE_JWT_SECRET` is the highest-value secret in the system after
-`DATABASE_URL`: Django's entire authorisation chain begins with verifying a
+`DB_PASSWORD`: Django's entire authorisation chain begins with verifying a
 token against it (`backend/apps/accounts/authentication.py`). Treat rotating it
 as a coordinated change — Supabase reissues tokens, and every in-flight token
 becomes invalid, so users are signed out.
+
+### A note on naming
+
+Environment variable names follow the house convention shared with the other
+EduAI services: unprefixed Django core settings (`SECRET_KEY`, `DEBUG`,
+`ALLOWED_HOSTS`), split database parts (`DB_HOST`, `DB_NAME`, `DB_USER`,
+`DB_PASSWORD`, `DB_PORT`, `DB_SSLMODE`) rather than one `DATABASE_URL`, and
+`MAIL_*` for SMTP. Django's own setting names are fixed - `EMAIL_HOST` and
+friends - so `prod.py` maps `MAIL_SERVER` onto `EMAIL_HOST` and so on. One
+operator should read the same keys across services.
 
 ## Rotating
 
@@ -57,7 +67,7 @@ still holding the old one.
 ## On suspected compromise
 
 Skip the staged rotation. Revoke first, restore service second — a leaked
-`DATABASE_URL` or gateway secret costs more per minute than an outage does.
+`DB_PASSWORD` or gateway secret costs more per minute than an outage does.
 Then: rotate, redeploy, and check `audit_events` and the gateway dashboard for
 activity in the exposure window.
 

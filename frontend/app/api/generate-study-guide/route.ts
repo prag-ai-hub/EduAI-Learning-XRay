@@ -1,4 +1,3 @@
-import { OPENAI_MODEL } from "../../../lib/openai";
 type StudyGuideRequest = {
   subject?: string;
   concept?: string;
@@ -33,8 +32,6 @@ export async function POST(request: Request) {
     const subject = body.subject?.trim() || "General";
     const concept = body.concept?.trim() || "the identified learning gaps";
     const gaps=(body.gaps||[]).sort((a,b)=>a.mastery-b.mastery);
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return Response.json({ error: "OPENAI_API_KEY is not configured." }, { status: 500 });
 
     const prompt =
       `Subject: ${subject}\nStudent: ${body.studentName || "Student"}\nPriority learning gap: ${concept}\n` +
@@ -46,12 +43,10 @@ export async function POST(request: Request) {
       "Do not introduce mathematics examples unless the subject or evidence is mathematical.";
 
     const startedAt = Date.now();
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        messages: [
+    // Through the Django proxy: this app no longer holds an OpenAI key.
+    // `redact` keeps the student's name out of the provider's copy of the prompt.
+    const completion = await complete(request, {
+      messages: [
           {
             role: "system",
             content:
@@ -61,19 +56,11 @@ export async function POST(request: Request) {
           },
           { role: "user", content: prompt },
         ],
-        response_format: { type: "json_object" },
-      }),
+      response_format: { type: "json_object" },
+      redact: body.studentName?.trim() ? { student_name: body.studentName.trim() } : {},
     });
     const openaiMs = Date.now() - startedAt;
-    if (!response.ok) {
-      return Response.json(
-        { error: await response.text(), timing: [{ provider: "openai", ms: openaiMs, ok: false }] },
-        { status: response.status }
-      );
-    }
-
-    const data = await response.json();
-    const raw = data?.choices?.[0]?.message?.content;
+const raw = completion.content;
     if (typeof raw !== "string") return Response.json({ error: "The learning-analysis service returned an empty response." }, { status: 502 });
 
     let guide: StudyGuide;
@@ -88,3 +75,4 @@ export async function POST(request: Request) {
   }
 }
 import { getAuthenticatedUser, unauthorized } from "../../../lib/supabase-auth";
+import { complete } from "../../../lib/ai-proxy";

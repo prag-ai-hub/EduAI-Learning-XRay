@@ -1,5 +1,5 @@
-import { OPENAI_MODEL } from "../../../lib/openai";
 import { extractDocumentText, type TextDocument } from "../../../lib/document-text";
+import { complete } from "../../../lib/ai-proxy";
 import { getAuthenticatedUser, unauthorized } from "../../../lib/supabase-auth";
 
 type GenerateAssessmentBody = {
@@ -26,12 +26,10 @@ export async function POST(request: Request) {
     let blueprintText = "";
     let ocrMs = 0;
     if (body.blueprint?.base64) {
-      const extracted = await extractDocumentText(body.blueprint, process.env.MISTRAL_API_KEY);
+      const extracted = await extractDocumentText(body.blueprint, request);
       blueprintText = extracted.text;
       ocrMs = extracted.ms;
     }
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return Response.json({ error: "The assessment-generation service is not configured." }, { status: 500 });
     const prompt = `Create a complete ${body.type || "assessment"} for:
 Title: ${title}
 Class: ${className}
@@ -48,22 +46,16 @@ Return ONLY JSON with this exact shape:
 
 The question paper must clearly show instructions, question numbers, marks per question, and total exactly ${maxMarks}. Follow the uploaded blueprint when supplied. The marking scheme must allocate marks question by question and include partial-credit guidance. The model answer must answer every question. Keep all three documents internally consistent and classroom-ready.`;
     const startedAt = Date.now();
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        messages: [
+    // Through the Django proxy: this app no longer holds an OpenAI key.
+    const completion = await complete(request, {
+      messages: [
           { role: "system", content: "You are an expert assessment designer. Produce rigorous, age-appropriate assessments and exact marking references." },
           { role: "user", content: prompt },
         ],
-        response_format: { type: "json_object" },
-      }),
+      response_format: { type: "json_object" },
     });
     const openaiMs = Date.now() - startedAt;
-    if (!response.ok) throw new Error(`Assessment generation failed: ${await response.text()}`);
-    const data = await response.json();
-    const raw = data?.choices?.[0]?.message?.content;
+const raw = completion.content;
     if (typeof raw !== "string") throw new Error("The assessment-generation service returned no content.");
     const generated = JSON.parse(raw);
     if (!generated.questionPaperText || !generated.markingSchemeText || !generated.modelAnswerText) {

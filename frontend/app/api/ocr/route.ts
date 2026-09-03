@@ -14,10 +14,9 @@ export async function POST(request: Request) {
     if (!documents.some(document => document.id === "questionPaper" && document.base64)) {
       return Response.json({ error: "A question paper is compulsory for learning-gap analysis." }, { status: 400 });
     }
-    const apiKey = process.env.MISTRAL_API_KEY;
     const results = [];
     for (const document of documents.filter(item => item?.base64)) {
-      const extracted = await extractDocumentText(document, apiKey);
+      const extracted = await extractDocumentText(document, request);
       results.push({ id: document.id, name: document.name, text: extracted.text, ms: extracted.ms, provider: extracted.provider });
     }
     return Response.json({

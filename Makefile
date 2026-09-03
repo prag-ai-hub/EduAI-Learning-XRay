@@ -88,7 +88,7 @@ db-test: ## Migration regression harness (needs the local stack running)
 	./scripts/test-migration-regression.sh
 
 db-bootstrap: ## Create the `django` schema for Django's own tables (once per DB)
-	psql "$${DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}" \
+	psql "$${PSQL_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}" \
 		-f $(BACKEND)/scripts/bootstrap_schema.sql
 
 migrate: ## Apply Django migrations (backend-owned tables only)

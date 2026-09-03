@@ -12,5 +12,9 @@ psycopg[binary]~=3.2.0
 # Supabase-issued JWT verification (HS256).
 PyJWT~=2.10.0
 
+# Outbound HTTP for the AI proxy. Needs real timeout control - a hung provider
+# call must not hold a worker open.
+httpx~=0.28.0
+
 # WSGI server for the dedicated Python host (not Cloudflare Workers).
 gunicorn~=23.0.0

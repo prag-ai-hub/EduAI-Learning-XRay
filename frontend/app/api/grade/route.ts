@@ -1,5 +1,5 @@
-import { OPENAI_MODEL } from "../../../lib/openai";
 import { getAuthenticatedUser, unauthorized } from "../../../lib/supabase-auth";
+import { aiProxyConfigured, complete } from "../../../lib/ai-proxy";
 
 type GradeRequest = {
   subject?: string; className?: string; studentName?: string; fileName?: string; maxMarks?: number;
@@ -63,8 +63,16 @@ export async function POST(request: Request) {
     // Verified BEFORE any credit is charged. Every early `return` past this point
     // would exit the try block without reaching the catch that refunds, so the
     // teacher would silently lose a credit for work that never ran.
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return Response.json({ error: "OPENAI_API_KEY is not configured." }, { status: 500 });
+    // The analysis service must be known-configured before a credit is spent.
+    // This returns rather than throws, so it never reaches the refund in the
+    // catch below - charging first would lose the teacher a credit for work
+    // that never ran.
+    if (!aiProxyConfigured()) {
+      return Response.json(
+        { error: "Analysis is unavailable: the analysis service is not configured." },
+        { status: 503 },
+      );
+    }
     const {getSupabaseServer}=await import("../../../lib/supabase-server");
     const db=getSupabaseServer();
     const creditResult=await db.rpc("consume_credit",{p_user_id:chargedUserId,p_operation_key:chargedOperation,p_reference:`${body.studentName||"Student"} · ${body.fileName||"answer sheet"}`,p_cost:Number(process.env.ANALYSIS_CREDIT_COST||1)});
@@ -123,19 +131,20 @@ ${body.ocrText.trim()}
 
 Produce the CBSE diagnostic result and exclude fully correct questions from gaps. When a reanalysis reason is supplied, explicitly reconsider that feedback while remaining grounded in the validated evidence.`;
     const startedAt = Date.now();
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        messages: [{ role: "system", content: CBSE_DIAGNOSTIC_PROMPT }, { role: "user", content: userPrompt }],
-        response_format: { type: "json_object" },
-      }),
+    // Through the Django proxy: this app no longer holds an OpenAI key.
+    //
+    // `redact` is what closes the confirmed leak - the prompt above embeds the
+    // real student name, and the proxy swaps it for a placeholder before the
+    // request leaves, then maps it back on the response. Only a supplied name
+    // is redacted: the "Student" fallback is a label, not an identity, and
+    // redacting it would mangle every other use of the word in the prompt.
+    const completion = await complete(request, {
+      messages: [{ role: "system", content: CBSE_DIAGNOSTIC_PROMPT }, { role: "user", content: userPrompt }],
+      response_format: { type: "json_object" },
+      redact: body.studentName?.trim() ? { student_name: body.studentName.trim() } : {},
     });
     const ms = Date.now() - startedAt;
-    if (!response.ok) throw new Error(`Learning analysis failed: ${await response.text()}`);
-    const data = await response.json();
-    const raw = data?.choices?.[0]?.message?.content;
+    const raw = completion.content;
     if (typeof raw !== "string") throw new Error("The learning-analysis service returned no diagnostic analysis.");
     let result;
     try { result = JSON.parse(raw); } catch { throw new Error("The learning-analysis service returned invalid diagnostic data."); }

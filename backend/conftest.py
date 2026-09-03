@@ -8,7 +8,7 @@ every query in these tests would fail against it.
 So database tests run against the *configured* database, each inside a
 transaction that pytest-django rolls back. Two guards make that safe:
 
-  * the host must be local; a non-local DATABASE_URL fails the run outright,
+  * the host must be local; a non-local DB_HOST fails the run outright,
   * tests skip themselves when nothing is listening, so the structural suite
     still runs on a checkout with no Supabase stack.
 
@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import uuid
 from datetime import timedelta
-from urllib.parse import urlparse
 
 import pytest
 from django.conf import settings
@@ -30,14 +29,7 @@ LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "db", "postgres"}
 
 
 def _configured_host() -> str:
-    name = settings.DATABASES["default"].get("HOST") or ""
-    if not name:
-        # django-environ keeps the original URL around in some setups; fall
-        # back to parsing it so the guard cannot be bypassed by config shape.
-        import os
-
-        name = urlparse(os.environ.get("DATABASE_URL", "")).hostname or ""
-    return name
+    return settings.DATABASES["default"].get("HOST") or ""
 
 
 @pytest.fixture(scope="session")

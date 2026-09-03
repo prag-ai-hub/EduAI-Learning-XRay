@@ -1,4 +1,3 @@
-import { OPENAI_MODEL } from "../../../lib/openai";
 type WorksheetRequestBody = {
   concept?: string;
   concepts?: string[];
@@ -35,13 +34,6 @@ export async function POST(request: Request) {
       subjectiveCount = 2,
     } = body;
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return Response.json(
-        { error: "The content-generation service is not configured." },
-        { status: 500 }
-      );
-    }
 
     const systemPrompt =
       "You are a teacher's assistant that writes targeted practice worksheets covering every supplied learning gap. " +
@@ -64,30 +56,16 @@ export async function POST(request: Request) {
       "Generate the worksheet content following the required JSON shape exactly, with the requested question counts. Ground the questions in this evidence and do not switch to an unrelated subject.";
 
     const startedAt = Date.now();
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        messages: [
+    // Through the Django proxy: this app no longer holds an OpenAI key.
+    const completion = await complete(request, {
+      messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        response_format: { type: "json_object" },
-      }),
+      response_format: { type: "json_object" },
     });
     const openaiMs = Date.now() - startedAt;
-
-    if (!res.ok) {
-      const errText = await res.text();
-      return Response.json({ error: errText, timing: [{ provider: "openai", ms: openaiMs, ok: false }] }, { status: res.status });
-    }
-
-    const data = await res.json();
-    const raw = data?.choices?.[0]?.message?.content;
+const raw = completion.content;
     if (!raw || typeof raw !== "string") {
       return Response.json({ error: "The content-generation service returned an empty response." }, { status: 502 });
     }
@@ -121,3 +99,4 @@ export async function POST(request: Request) {
   }
 }
 import { getAuthenticatedUser, unauthorized } from "../../../lib/supabase-auth";
+import { complete } from "../../../lib/ai-proxy";

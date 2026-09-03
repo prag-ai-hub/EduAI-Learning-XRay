@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       name: body.name,
       mimeType: body.mimeType || "application/octet-stream",
       base64: body.base64,
-    }, process.env.MISTRAL_API_KEY);
+    }, request);
     if (!extracted.text?.trim()) {
       return Response.json({ error: "No readable content was found in this document." }, { status: 422 });
     }

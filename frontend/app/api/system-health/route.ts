@@ -1,4 +1,5 @@
-import { OPENAI_MODEL, verifyModel } from "../../../lib/openai";
+import { aiProxyConfigured, health as proxyHealth } from "../../../lib/ai-proxy";
+
 // Genuine live probe of the two AI providers this app depends on.
 // No fabricated numbers: each check makes a real, cheap request to the provider
 // right now and reports whether it succeeded and how long it took.
@@ -11,59 +12,51 @@ type ProviderCheck = {
   error?: string;
 };
 
-async function checkMistral(apiKey: string | undefined): Promise<ProviderCheck> {
-  if (!apiKey) return { provider: "mistral", ok: false, ms: 0, error: "MISTRAL_API_KEY is not set" };
+/**
+ * Provider reachability now belongs to the Django service: it holds the keys,
+ * so it is the only side that can verify them. This app can honestly report
+ * two things - whether the proxy is configured here, and whether it answers.
+ */
+async function checkAiProxy(request: Request) {
   const startedAt = Date.now();
-  try {
-    const res = await fetch("https://api.mistral.ai/v1/models", {
-      method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    return { provider: "mistral", ok: res.ok, ms: Date.now() - startedAt, status: res.status };
-  } catch (error) {
+  if (!aiProxyConfigured()) {
     return {
-      provider: "mistral",
-      ok: false,
+      provider: "ai-proxy" as const, ok: false, ms: 0,
+      error: "DJANGO_API_URL is not set: AI features are unavailable in this environment.",
+      model: { model: null, ok: false, error: "No analysis service configured." },
+    };
+  }
+  try {
+    // One metadata lookup, not a completion: it proves the proxy is reachable
+    // and that the configured model exists, without spending tokens.
+    const report = await proxyHealth(request);
+    return {
+      provider: "ai-proxy" as const,
+      ok: report.model.ok,
       ms: Date.now() - startedAt,
-      error: error instanceof Error ? error.message : "Request failed",
+      ...(report.model.ok ? {} : { error: report.model.error || "Model check failed." }),
+      model: report.model,
+    };
+  } catch (cause) {
+    return {
+      provider: "ai-proxy" as const, ok: false, ms: Date.now() - startedAt,
+      error: cause instanceof Error ? cause.message : "The analysis service did not respond.",
+      model: { model: null, ok: false, error: "Model could not be verified." },
     };
   }
 }
 
-async function checkOpenAI(apiKey: string | undefined): Promise<ProviderCheck> {
-  if (!apiKey) return { provider: "openai", ok: false, ms: 0, error: "Learning-analysis service is not configured" };
-  const startedAt = Date.now();
-  try {
-    const res = await fetch("https://api.openai.com/v1/models", {
-      method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    return { provider: "openai", ok: res.ok, ms: Date.now() - startedAt, status: res.status };
-  } catch (error) {
-    return {
-      provider: "openai",
-      ok: false,
-      ms: Date.now() - startedAt,
-      error: error instanceof Error ? error.message : "Request failed",
-    };
-  }
-}
-
-export async function GET() {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const [mistral, openai, model] = await Promise.all([
-    checkMistral(process.env.MISTRAL_API_KEY),
-    checkOpenAI(apiKey),
-    // Reaching the API is not the same as the configured model existing. A
-    // wrong model id fails every grading run while the provider looks healthy,
-    // so it is checked explicitly rather than discovered in production.
-    apiKey
-      ? verifyModel(apiKey)
-      : Promise.resolve({ model: OPENAI_MODEL, ok: false as const, ms: 0, error: "OPENAI_API_KEY is not set" }),
-  ]);
+export async function GET(request: Request) {
+  const proxy = await checkAiProxy(request);
   return Response.json({
     checkedAt: new Date().toISOString(),
-    providers: [mistral, openai],
-    model,
+    providers: [proxy],
+    // The model id is the Django service's to know and verify - it is the side
+    // holding the key. Reporting a guess here would be worse than reporting
+    // nothing, because a wrong model fails every grading run while this page
+    // still looks healthy.
+    // The model id is the analysis service's to know and verify - it is the
+    // side holding the key.
+    model: proxy.model ?? { checkedBy: "django", ok: false },
   });
 }
