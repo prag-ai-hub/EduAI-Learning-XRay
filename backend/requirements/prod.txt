@@ -1,0 +1,4 @@
+-r base.txt
+
+# Static file serving without a separate web server in front.
+whitenoise~=6.8.0

@@ -1,0 +1,16 @@
+# Runtime dependencies. Pinned to a minor line so a `pip install` is
+# reproducible without freezing security patches out.
+
+Django~=5.2.0
+djangorestframework~=3.16.0
+django-environ~=0.12.0
+django-cors-headers~=4.7.0
+
+# Postgres driver for the existing Supabase-hosted database.
+psycopg[binary]~=3.2.0
+
+# Supabase-issued JWT verification (HS256).
+PyJWT~=2.10.0
+
+# WSGI server for the dedicated Python host (not Cloudflare Workers).
+gunicorn~=23.0.0
