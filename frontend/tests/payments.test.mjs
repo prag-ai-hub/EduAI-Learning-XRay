@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const read = p => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
-const m9   = read("supabase/migrations/20260905000000_plans_and_subscriptions.sql");
-const m10  = read("supabase/migrations/20260905000100_payments_events_invoices.sql");
-const m13  = read("supabase/migrations/20260904000200_unify_user_foreign_keys.sql");
+const m9   = read("../supabase/migrations/20260905000000_plans_and_subscriptions.sql");
+const m10  = read("../supabase/migrations/20260905000100_payments_events_invoices.sql");
+const m13  = read("../supabase/migrations/20260904000200_unify_user_foreign_keys.sql");
 const authz= read("lib/authorization.ts");
 
 test("M13 makes public.users the single parent for user references", () => {
@@ -89,7 +89,7 @@ test("requireEntitlement does not lock out schools before M9 is deployed", () =>
   assert.match(authz, /resolve_entitlement\|schema cache\|could not find the function/);
 });
 
-const m15 = read("supabase/migrations/20260905000300_refund_reopens_operation_key.sql");
+const m15 = read("../supabase/migrations/20260905000300_refund_reopens_operation_key.sql");
 
 test("a refunded operation key can be charged again", () => {
   // consume_credit asked "has this key ever been charged?" when the right

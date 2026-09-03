@@ -12,7 +12,7 @@ test("production build contains the deployed worker and persistence routes", asy
 
 test("Supabase database and private object storage have a deployable migration", async () => {
   const hosting = JSON.parse(await readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"));
-  const migration = await readFile(new URL("../supabase/migrations/20260727000000_eduai_learning_xray.sql", import.meta.url), "utf8");
+  const migration = await readFile(new URL("../../supabase/migrations/20260727000000_eduai_learning_xray.sql", import.meta.url), "utf8");
   assert.equal(hosting.d1, null);
   assert.equal(hosting.r2, null);
   for (const table of [

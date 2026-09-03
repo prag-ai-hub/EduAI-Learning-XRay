@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 
 const read = p => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
-const MIG = new URL("../supabase/migrations/", import.meta.url);
+const MIG = new URL("../../supabase/migrations/", import.meta.url);
 const migrations = readdirSync(MIG).filter(f => f.endsWith(".sql")).sort();
-const m14 = read("supabase/migrations/20260905000200_close_rls_gap.sql");
+const m14 = read("../supabase/migrations/20260905000200_close_rls_gap.sql");
 const adminUsers = read("app/api/admin/users/route.ts");
 const authz = read("lib/authorization.ts");
 
@@ -89,7 +89,7 @@ test("the regression harness derives its migration chain from disk", () => {
   // the harness exercised an incomplete chain and reported a clean run against
   // the very behaviour M15 fixed. A guard that can silently go stale is worse
   // than no guard, because it is trusted.
-  const harness = read("scripts/test-migration-regression.sh");
+  const harness = read("../scripts/test-migration-regression.sh");
   assert.match(harness, /mapfile -t CHAIN < <\(ls "\$MIG"/);
   assert.doesNotMatch(harness, /CHAIN=\(\s*\n\s*2026/,
     "the chain must not be a hardcoded list");

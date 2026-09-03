@@ -10,7 +10,7 @@ const shareRead    = read("app/api/shares/[token]/route.ts");
 const workspace    = read("app/api/workspace/route.ts");
 const health       = read("app/api/system-health/route.ts");
 const appUi        = read("app/ui/FunctionalEduAIApp.tsx");
-const concurrency  = read("supabase/migrations/20260903000200_share_extraction_and_concurrency.sql");
+const concurrency  = read("../supabase/migrations/20260903000200_share_extraction_and_concurrency.sql");
 
 // ---------------------------------------------------------------- H3
 

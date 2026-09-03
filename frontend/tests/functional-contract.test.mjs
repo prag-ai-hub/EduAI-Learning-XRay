@@ -435,7 +435,7 @@ test("document extraction reads text, Word, OpenDocument and spreadsheet uploads
 
 test("class is the canonical 1 to 12 master in the database and assessment form", () => {
   const workspace = readFileSync(new URL("../app/api/workspace/route.ts", import.meta.url), "utf8");
-  const migration = readFileSync(new URL("../supabase/migrations/20260729000000_class_master_and_assessment_references.sql", import.meta.url), "utf8");
+  const migration = readFileSync(new URL("../../supabase/migrations/20260729000000_class_master_and_assessment_references.sql", import.meta.url), "utf8");
   assert.match(app, /Array\.from\(\{length:12\}/);
   assert.match(app, /Field label="Class"/);
   assert.match(workspace, /className: className \?\? grade/);

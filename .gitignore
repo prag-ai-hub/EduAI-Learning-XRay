@@ -1,46 +1,66 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# ---------------------------------------------------------------------------
+# Monorepo: frontend/ (Next.js) + backend/ (Django) + supabase/ (shared schema)
+# Patterns are intentionally unanchored so they apply inside both workspaces.
+# ---------------------------------------------------------------------------
 
-# dependencies
-/node_modules
-/.pnp
+# --- Secrets. Never commit a filled-in env file. ---------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Node / Next.js / Cloudflare (frontend/) -------------------------------
+node_modules/
+.pnp
 .pnp.*
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
-
-# testing
-/coverage
-
-# next.js
-/.next/
-/.vinext/
-/out/
-
-# misc
-.DS_Store
-*.pem
-
-# debug
+.next/
+.vinext/
+out/
+dist/
+.wrangler/
+next-env.d.ts
+*.tsbuildinfo
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
-.env*
-!.env.example
-
-# vercel
 .vercel
 
-# typescript
-next-env.d.ts
-/dist/
-/.wrangler/
-/outputs/
-/work/
+# --- Python / Django (backend/) --------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+.coverage.*
+staticfiles/
+media/
 
-# redundant source snapshot (superseded by git history)
+# --- Testing / coverage ----------------------------------------------------
+coverage/
+
+# --- OS / editor -----------------------------------------------------------
+.DS_Store
+.idea/
+*.swp
+
+# --- Local scratch ---------------------------------------------------------
+outputs/
+work/
+.migrations-held/
+
+# Redundant source snapshot (superseded by git history)
 EduAI-Learning-X-Ray-source-*.zip

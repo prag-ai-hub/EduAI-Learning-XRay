@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 
-const DIR = new URL("../supabase/migrations/", import.meta.url);
+const DIR = new URL("../../supabase/migrations/", import.meta.url);
 const files = readdirSync(DIR).filter(f => f.endsWith(".sql")).sort();
 const stripComments = sql => sql.replace(/^\s*--.*$/gm, "");
 

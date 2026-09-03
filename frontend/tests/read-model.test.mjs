@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const read = p => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
-const m11        = read("supabase/migrations/20260904000000_read_model_publication.sql");
+const m11        = read("../supabase/migrations/20260904000000_read_model_publication.sql");
 const publishApi = read("app/api/publish/route.ts");
 const parentApi  = read("app/api/parent/children/route.ts");
 const platformApi= read("app/api/admin/platform-summary/route.ts");
@@ -111,7 +111,7 @@ test("every screen that needs the trimmed detail hydrates first", () => {
   assert.match(appUi, /const detailedResult=await hydrateResult/);
 });
 
-const m16 = read("supabase/migrations/20260905000400_publish_tenant_guard.sql");
+const m16 = read("../supabase/migrations/20260905000400_publish_tenant_guard.sql");
 
 test("publishing cannot write into another school's rows", () => {
   // The upserts conflict on client-generated ids and did not include school_id

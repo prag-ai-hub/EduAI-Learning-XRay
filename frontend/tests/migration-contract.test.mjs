@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const read = name => readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), "utf8");
+const read = name => readFileSync(new URL(`../../supabase/migrations/${name}`, import.meta.url), "utf8");
 // Assertions about behaviour must read executable SQL, not the prose in comments
 // that explains the defect being fixed.
 const executable = sql => sql.replace(/^\s*--.*$/gm, "");

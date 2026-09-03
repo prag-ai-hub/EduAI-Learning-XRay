@@ -1,5 +1,5 @@
 {
-  "name": "site-creator-vinext-starter",
+  "name": "eduai-frontend",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -11,7 +11,7 @@
     "start": "vinext start",
     "test": "npm run build && node --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:push": "supabase db push"
+    "smoke": "./scripts/smoke-app.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
@@ -42,5 +42,6 @@
     "vite": "^8.2.2",
     "wrangler": "4.92.0"
   },
-  "type": "module"
+  "type": "module",
+  "description": "EduAI Learning X-Ray web app (Next.js on Cloudflare Workers) - existing product surface."
 }
