@@ -4,7 +4,12 @@ export async function GET() {
   if (!url || !publishableKey) {
     return Response.json({ error: "Teacher authentication is not configured." }, { status: 503 });
   }
-  return Response.json({ url, publishableKey }, {
+  // Base URL of the Django service. The browser calls it directly with the
+  // Supabase access token, so Django's CORS allowlist must name this origin.
+  // Empty when the service is not deployed yet: the client treats that as
+  // "the new surfaces are unavailable" rather than guessing a URL.
+  const djangoApiUrl = process.env.DJANGO_API_URL || "";
+  return Response.json({ url, publishableKey, djangoApiUrl }, {
     headers: { "cache-control": "public, max-age=300" },
   });
 }

@@ -6,6 +6,7 @@ import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import { zipSync } from "fflate";
 import ParentShareDialog from "./ParentShareDialog";
+import { ApiError, djangoApi } from "../../lib/django-api";
 
 const RESET_ON_MOUNT = Symbol("reset-on-mount");
 
@@ -366,7 +367,7 @@ function WorkspaceApp({profile,onSignOut}:{profile:DemoProfile;onSignOut:()=>Pro
             ? <ParentPending/>
             : role==="Principal"
               ? <PrincipalApp module={module as AdminModule} state={state} open={setDialog} notify={notify}/>
-              : <PlatformApp module={module as AdminModule} state={state} open={setDialog}/>
+              : <PlatformApp module={module as AdminModule} state={state} open={setDialog} notify={notify}/>
         }
       </div>
     </main>
@@ -750,13 +751,120 @@ function SystemHealthPanel({state}:{state:DemoState}){
     <p className="modal-copy">Long-term uptime (30/90-day %) and queue depth still require a real monitoring backend with persistent storage across sessions — that&apos;s genuinely out of scope for this frontend-only build, not faked.</p>
   </section>;
 }
-function PlatformApp({module,state,open}:W<"module"|"state"|"open">){
+function PlatformApp({module,state,open,notify}:W<"module"|"state"|"open"|"notify">){
   const configs:{[key:string]:string[]}={Overview:["Tenant management","Usage analytics","AI providers","Model routing","Prompt versions","Academic configuration","Feature flags","Gamification","Notifications","Privacy","System health","Audit logs"],Schools:["Search schools","Plans & limits","Suspend / reactivate","Pilot status","Support owner","Internal notes"],Users:["Search users","Suspend access","Reset access","Login history","Terms version","Platform roles"],Analytics:["DAU / WAU / MAU","Assessments & pages","AI acceptance & changes","Regrading","X-Rays & interventions","Time saved & AI cost"],"AI Configuration":["Provider registry","Model registry","Routing rules","Prompt versions","Output schemas","Fallback sequence"],"Feature flags":["AI grading","Handwriting recognition","Regrading","Gamification","Principal reporting","Experimental models"],"System health":["API uptime","Queue depth","Provider latency","Database & storage","Failed jobs","Active incidents"],Audit:["Authentication","Configuration changes","Support access","Tenant changes","AI versions","Retention actions"]};
   const items=configs[module]||configs.Overview;
   const totalFiles=state.assessments.reduce((s:number,a:Assessment)=>s+(a.files?.length||0),0);
   const results=allGradeResults(state);
   const reviewRatio=state.assessments.length?Math.round(state.assessments.reduce((s:number,a:Assessment)=>s+(a.totalReviews?a.reviewed/a.totalReviews:0),0)/state.assessments.length*100):null;
-  return <><PageHead eyebrow="EduAI Hub platform administrator" title={module==="Overview"?"Platform operations":module} subtitle="Tenant health, responsible AI operations and auditable configuration."><button className="primary" onClick={()=>open("platform-config")}>＋ Configure</button></PageHead><section className="metric-grid"><Metric label="Active schools" value={String(state.schools.length)} note="This tenant"/><Metric label="Files processed" value={String(totalFiles)} note="Uploaded to assessments"/><Metric label="Graded evidence" value={String(results.length)} note="EduAI analysis"/><Metric label="Teacher review rate" value={reviewRatio===null?"No data":`${reviewRatio}%`} note="Avg across assessments"/></section><div className="dashboard-grid">{module==="System health"?<SystemHealthPanel state={state}/>:<section className="card span-2"><CardHead eyebrow={module} title="Controls & evidence"/><div className="admin-actions">{items.map(x=><button key={x} onClick={()=>open("platform-config")}><b>{x}</b><span>View, configure and audit</span></button>)}</div></section>}<section className="card"><p className="eyebrow">Responsible operations</p><h2>Current safeguards</h2>{["Tenant isolation","Identifiable-data restriction","Prompt versioning","Support-access expiry","Audit logging"].map(x=><div className="list-item" key={x}><b>{x}</b><span className="status success">Active</span></div>)}</section></div></>;
+  return <><PageHead eyebrow="EduAI Hub platform administrator" title={module==="Overview"?"Platform operations":module} subtitle="Tenant health, responsible AI operations and auditable configuration."><button className="primary" onClick={()=>open("platform-config")}>＋ Configure</button></PageHead><section className="metric-grid"><Metric label="Active schools" value={String(state.schools.length)} note="This tenant"/><Metric label="Files processed" value={String(totalFiles)} note="Uploaded to assessments"/><Metric label="Graded evidence" value={String(results.length)} note="EduAI analysis"/><Metric label="Teacher review rate" value={reviewRatio===null?"No data":`${reviewRatio}%`} note="Avg across assessments"/></section><div className="dashboard-grid">{module==="System health"?<SystemHealthPanel state={state}/>:module==="Schools"?<SchoolDirectory notify={notify}/>:<section className="card span-2"><CardHead eyebrow={module} title="Controls & evidence"/><div className="admin-actions">{items.map(x=><button key={x} onClick={()=>open("platform-config")}><b>{x}</b><span>View, configure and audit</span></button>)}</div></section>}<section className="card"><p className="eyebrow">Responsible operations</p><h2>Current safeguards</h2>{["Tenant isolation","Identifiable-data restriction","Prompt versioning","Support-access expiry","Audit logging"].map(x=><div className="list-item" key={x}><b>{x}</b><span className="status success">Active</span></div>)}</section></div></>;
+}
+
+type DirectorySchool = {
+  id:string; name:string; city:string|null; board:string|null;
+  status:"Pending"|"Active"|"Suspended"|"Closed";
+  created_at:string; approved_at:string|null; suspended_at:string|null;
+};
+
+const SCHOOL_FILTERS=["All","Pending","Active","Suspended","Closed"] as const;
+// Only these transitions exist. The API validates them again - this is the
+// affordance, not the rule.
+const SCHOOL_ACTIONS:Record<string,{verb:string;label:string;needsReason:boolean}[]>={
+  Pending:[{verb:"approve",label:"Approve",needsReason:false},{verb:"reject",label:"Reject",needsReason:true}],
+  Active:[{verb:"suspend",label:"Suspend",needsReason:true}],
+  Suspended:[{verb:"reactivate",label:"Reactivate",needsReason:true}],
+  Closed:[],
+};
+const SCHOOL_STATUS_TONE:Record<string,string>={Active:"success",Pending:"warning",Suspended:"warning",Closed:"neutral"};
+
+/**
+ * Cross-school directory with approve / reject / suspend, served by the Django
+ * service rather than the workspace snapshot - these are platform rows, not
+ * this tenant's.
+ *
+ * A rejection, suspension or reactivation needs a written reason: the school is
+ * told what happened, and the audit trail has to show a person judged.
+ */
+function SchoolDirectory({notify}:W<"notify">){
+  const [rows,setRows]=useState<DirectorySchool[]|null>(null);
+  const [error,setError]=useState("");
+  const [filter,setFilter]=useState<string>("All");
+  const [asking,setAsking]=useState<{id:string;verb:string;label:string}|null>(null);
+  const [reason,setReason]=useState("");
+  const [busy,setBusy]=useState(false);
+
+  const load=async(next:string)=>{
+    setError("");
+    try{
+      const query=next==="All"?"":`?status=${encodeURIComponent(next)}`;
+      const payload=await djangoApi.get<{results:DirectorySchool[]}>(`/api/v1/schools/${query}`);
+      setRows(payload.results);
+    }catch(cause){
+      setRows([]);
+      setError(cause instanceof ApiError?cause.message:"The school directory is unavailable.");
+    }
+  };
+
+  useResetOnChange(filter,()=>{setRows(null);void load(filter)});
+
+  const act=async(school:DirectorySchool,verb:string,withReason:string|null)=>{
+    setBusy(true);
+    try{
+      await djangoApi.post(`/api/v1/schools/${encodeURIComponent(school.id)}/${verb}/`,
+        withReason===null?{}:{reason:withReason});
+      notify(`${school.name} ${verb==="approve"?"approved":verb==="reject"?"rejected":verb==="suspend"?"suspended":"reactivated"}.`);
+      setAsking(null);setReason("");
+      await load(filter);
+    }catch(cause){
+      const message=cause instanceof ApiError?cause.message:"That action could not be completed.";
+      setError(message);notify(message,"error");
+    }finally{setBusy(false)}
+  };
+
+  return <section className="card span-2">
+    <CardHead eyebrow="Platform" title="Schools">
+      <button className="secondary" onClick={()=>{setRows(null);void load(filter)}}>Refresh</button>
+    </CardHead>
+    <div className="filters">
+      {SCHOOL_FILTERS.map(item=>
+        <button key={item} className={filter===item?"active":""} onClick={()=>setFilter(item)}>{item}</button>)}
+    </div>
+    {error&&<p className="form-error" role="alert">{error}</p>}
+    {rows===null&&!error&&<p className="insight" role="status">Loading schools…</p>}
+    {rows!==null&&rows.length===0&&!error&&
+      <div className="list-item"><b>No schools with this status</b><span className="status neutral">Empty</span></div>}
+    {rows!==null&&rows.length>0&&<div className="user-table">
+      {rows.map(school=><div className="user-row" key={school.id}>
+        <span className="file-icon">{school.name.slice(0,2).toUpperCase()}</span>
+        <div>
+          <b>{school.name}</b>
+          <small>{[school.city,school.board].filter(Boolean).join(" · ")||"No location recorded"}</small>
+        </div>
+        <span className={`status ${SCHOOL_STATUS_TONE[school.status]||"neutral"}`}>{school.status}</span>
+        <small>{new Date(school.created_at).toLocaleDateString()}</small>
+        {asking?.id===school.id
+          ?<div className="button-row">
+             <input aria-label={`Reason to ${asking.label.toLowerCase()} ${school.name}`}
+                    value={reason} onChange={e=>setReason(e.target.value)}
+                    placeholder="Reason (shown to the school)"/>
+             <button className="primary" disabled={busy||reason.trim().length<10}
+                     onClick={()=>void act(school,asking.verb,reason.trim())}>
+               {busy?"Working…":`Confirm ${asking.label.toLowerCase()}`}
+             </button>
+             <button className="secondary" onClick={()=>{setAsking(null);setReason("")}}>Cancel</button>
+           </div>
+          :<div className="button-row">
+             {(SCHOOL_ACTIONS[school.status]||[]).map(option=>
+               <button key={option.verb} className="secondary" disabled={busy}
+                       onClick={()=>option.needsReason
+                         ?(setAsking({id:school.id,verb:option.verb,label:option.label}),setReason(""))
+                         :void act(school,option.verb,null)}>
+                 {option.label}
+               </button>)}
+           </div>}
+      </div>)}
+    </div>}
+  </section>;
 }
 
 function AppDialog({type,close,open,state,setState,selected,update,notify,resetDemo,openAssessment}:W<"close"|"open"|"state"|"setState"|"selected"|"update"|"notify"|"resetDemo"|"openAssessment"> & {type:string}){
