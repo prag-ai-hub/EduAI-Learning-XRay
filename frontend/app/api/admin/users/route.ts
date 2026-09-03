@@ -38,12 +38,15 @@ export async function GET(request:Request){
   const {schoolId}=scope;
   const db=getSupabaseServer();
 
-  let [{data:users,error},{data:transactions,error:transactionError}]=await Promise.all([
+  // users/error are reassigned by the legacy-column fallback below; the
+  // ledger pair never is, so it stays const.
+  const [userResult,{data:transactions,error:transactionError}]=await Promise.all([
     db.from("users").select("id,name,email,role,status,total_credits,used_credits,disabled_at,updated_at").eq("school_id",schoolId).order("name"),
     db.from("credit_transactions").select("id,user_id,amount,transaction_type,reference,reason,admin_user_id,created_at")
       .in("user_id",(await db.from("users").select("id").eq("school_id",schoolId)).data?.map(u=>u.id)||[])
       .order("created_at",{ascending:false}).limit(200)
   ]);
+  let {data:users,error}=userResult;
   if(error&&(/total_credits|used_credits|disabled_at|column .* does not exist/i.test(error.message||"")||error.code==="42703")){
     const legacy=await db.from("users").select("id,name,email,role,status,updated_at").eq("school_id",schoolId).order("name");
     users=(legacy.data||[]).map(user=>({...user,total_credits:0,used_credits:0,disabled_at:null}));error=legacy.error;

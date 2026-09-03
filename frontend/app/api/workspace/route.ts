@@ -3,12 +3,22 @@ import { getAuthenticatedUser, unauthorized } from "../../../lib/supabase-auth";
 
 const MAX_STATE_BYTES = 4 * 1024 * 1024;
 
-function stateForDatabase(value: any) {
-  if (!value || typeof value !== "object") return value;
+// The workspace blob is teacher-authored JSON with no fixed schema. These two
+// functions rename exactly one field in each assessment and must pass the rest
+// through untouched, so they narrow only what they touch.
+type WorkspaceAssessment = Record<string, unknown> & { grade?: unknown; className?: unknown };
+type WorkspaceState = Record<string, unknown> & { assessments?: unknown };
+
+function isState(value: unknown): value is WorkspaceState {
+  return Boolean(value) && typeof value === "object";
+}
+
+function stateForDatabase(value: unknown) {
+  if (!isState(value)) return value;
   return {
     ...value,
     assessments: Array.isArray(value.assessments)
-      ? value.assessments.map(({ grade, className, ...assessment }: any) => ({
+      ? (value.assessments as WorkspaceAssessment[]).map(({ grade, className, ...assessment }) => ({
           ...assessment,
           className: className ?? grade ?? "",
         }))
@@ -16,12 +26,12 @@ function stateForDatabase(value: any) {
   };
 }
 
-function stateForClient(value: any) {
-  if (!value || typeof value !== "object") return value;
+function stateForClient(value: unknown) {
+  if (!isState(value)) return value;
   return {
     ...value,
     assessments: Array.isArray(value.assessments)
-      ? value.assessments.map(({ className, grade, ...assessment }: any) => ({
+      ? (value.assessments as WorkspaceAssessment[]).map(({ className, grade, ...assessment }) => ({
           ...assessment,
           grade: className ?? grade ?? "",
         }))

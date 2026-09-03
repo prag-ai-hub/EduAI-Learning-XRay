@@ -115,16 +115,11 @@ export function validateEvaluationSubmission(submission: EvaluationSubmission): 
     if ((question.attemptState === "not_attempted" || question.attemptState === "excluded") && question.awardedMarks !== 0) errors.push(`${prefix}: ${question.attemptState.replace("_", " ")} must award zero marks.`);
     if (question.attemptState === "attempted" && !question.evidence?.trim()) errors.push(`${prefix}: answer evidence is required.`);
     if (question.aiDisposition !== "accepted" && !question.rationale?.trim()) errors.push(`${prefix}: a rationale is required when the AI proposal is edited or rejected.`);
-    if (question.criteria?.length) {
-      const criterionAward = question.criteria.reduce((sum, item) => sum + Number(item.awardedMarks || 0), 0);
-      // Criterion rows are optional AI explanation metadata. A malformed AI
-      // breakdown must not block an unchanged accepted question award. Once an
-      // evaluator edits or rejects the proposal, the edited breakdown is
-      // validated strictly against the teacher-approved question total.
-      // Criterion rows are explanatory AI metadata and are not editable in the
-      // evaluator UI. The authoritative, teacher-editable question award is
-      // validated above; an internal criterion mismatch must never block it.
-    }
+    // Criterion rows are explanatory AI metadata and are not editable in the
+    // evaluator UI. A malformed AI breakdown must never block an otherwise
+    // valid question award, so the criterion total is deliberately not
+    // validated against it here - the teacher-editable question award is
+    // validated above and is the authoritative figure.
     totalAwarded += Number(question.awardedMarks || 0);
     totalMaximum += Number(question.maxMarks || 0);
   }

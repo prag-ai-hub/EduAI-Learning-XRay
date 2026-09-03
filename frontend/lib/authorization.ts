@@ -15,7 +15,10 @@ function normalizeRole(value:unknown):Role{
   return (ROLES as string[]).includes(role) ? role as Role : "Teacher";
 }
 
-function legacyCreditSchema(error:any){return Boolean(error&&(/total_credits|used_credits|disabled_at|column .* does not exist/i.test(error.message||"")||error.code==="42703"))}
+// Shape of a supabase-js error, narrowed to the two fields this check reads.
+type DatabaseError = { message?:string|null; code?:string|null } | null;
+
+function legacyCreditSchema(error:DatabaseError){return Boolean(error&&(/total_credits|used_credits|disabled_at|column .* does not exist/i.test(error.message||"")||error.code==="42703"))}
 
 export async function getAuthorizedProfile(request:Request):Promise<AuthorizedProfile|Response>{
   const authUser=await getAuthenticatedUser(request);

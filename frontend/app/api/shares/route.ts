@@ -8,7 +8,7 @@ export async function POST(request:Request){
     const body=await request.json() as {assessmentId?:string;fileId?:string;expiresInDays?:number};
     const {data,error}=await getSupabaseServer().from("workspace_snapshots").select("state_json").eq("workspace_id",`teacher:${user.id}`).maybeSingle();
     if(error)throw error;
-    const assessment=data?.state_json?.assessments?.find((item:any)=>item.id===body.assessmentId);
+    const assessment=data?.state_json?.assessments?.find((item:{id?:string})=>item.id===body.assessmentId);
     const result=assessment?.gradeResults?.[String(body.fileId||"")];
     if(!assessment||!result)return Response.json({error:"The selected student analysis could not be found."},{status:404});
     const days=Math.max(1,Math.min(90,Number(body.expiresInDays)||30));

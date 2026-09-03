@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
+
 import { FormEvent, useEffect, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { landingPath } from "../../lib/roles";
 
 /**
@@ -13,7 +15,7 @@ import { landingPath } from "../../lib/roles";
  * post-login destination can depend on the role.
  */
 export default function SignInPage() {
-  const [client, setClient] = useState<any>(null);
+  const [client, setClient] = useState<SupabaseClient | null>(null);
   const [mode, setMode] = useState<"login"|"signup">("login");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -140,7 +142,7 @@ export default function SignInPage() {
           </button>
 
           <p className="login-note"><span>●</span> Secure sign-in · Session protection · Audit history</p>
-          <footer><a href="/">Home</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><span>© 2026 EduAI Hub</span></footer>
+          <footer><Link href="/">Home</Link><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><span>© 2026 EduAI Hub</span></footer>
         </div>
       </section>
     </main>

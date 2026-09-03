@@ -32,11 +32,25 @@ Return ONLY JSON:
 The questions array is compulsory and must account for every printed question or valid alternative in the question paper. Use stable IDs such as q1, q2a and q8b. Every question must include pageNumber, using the --- Page n --- divider that contains that student's response; when an answer spans pages, use its first page. Question maximum marks must sum exactly to maxMarks. Use excluded only for a valid unselected alternative. Every attempted answer needs a concise evidence excerpt. Criterion marks must sum to the question award when criteria are returned. These are AI proposals for evaluator review, never final marks.
 Each gap must be genuine and evidence-supported. "evidence" cites question number(s), marks when visible, and a concise paraphrase of the response. "finding" names the smallest teachable gap and error category. "misconception" gives root cause and confidence. "rework" gives prerequisites, sequence, practice mix, mistake-prevention check and measurable mastery standard. Order foundational gaps first.`;
 
+// One row of `consume_credit`. The out_ prefix is the plpgsql convention M12
+// introduced: an OUT name that collides with a column the function touches
+// makes references ambiguous at runtime.
+type ConsumeCreditRow = {
+  out_total_credits: number;
+  out_used_credits: number;
+  out_remaining_credits: number;
+  out_charged: boolean;
+};
+
+// Untrusted model output. Every field is coerced and range-checked below, so
+// the incoming shape is deliberately permissive.
+type RawItem = Record<string, unknown>;
+
 export async function POST(request: Request) {
   let chargedOperation = "";
   // Hoisted so the catch block can refund: `user` is scoped to the try.
   let chargedUserId = "";
-  let credit: any = null;
+  let credit: ConsumeCreditRow[] | null = null;
   try {
     const user = await getAuthenticatedUser(request);
     if (!user) return unauthorized();
@@ -128,13 +142,13 @@ Produce the CBSE diagnostic result and exclude fully correct questions from gaps
     const maxMarks = Number(result.maxMarks);
     if (!Number.isFinite(maxMarks) || maxMarks <= 0 || maxMarks > 10000) throw new Error("The assessment total marks could not be determined reliably.");
     const gaps = (Array.isArray(result.gaps) ? result.gaps : [])
-      .filter((gap: any) => gap && typeof gap.concept === "string" && Number(gap.mastery) < 100)
-      .map((gap: any) => ({ ...gap, mastery: Math.max(0, Math.min(99, Number(gap.mastery) || 0)) }));
-    const questions = (Array.isArray(result.questions) ? result.questions : []).map((question: any, index: number) => ({
+      .filter((gap: RawItem) => gap && typeof gap.concept === "string" && Number(gap.mastery) < 100)
+      .map((gap: RawItem) => ({ ...gap, mastery: Math.max(0, Math.min(99, Number(gap.mastery) || 0)) }));
+    const questions = (Array.isArray(result.questions) ? result.questions : []).map((question: RawItem, index: number) => ({
       id: String(question.id || `q${index + 1}`).trim(),
       label: String(question.label || question.id || `Question ${index + 1}`).trim(),
       pageNumber: Math.max(1, Math.floor(Number(question.pageNumber) || 1)),
-      attemptState: ["attempted", "not_attempted", "excluded"].includes(question.attemptState) ? question.attemptState : "attempted",
+      attemptState: ["attempted", "not_attempted", "excluded"].includes(String(question.attemptState)) ? String(question.attemptState) : "attempted",
       awardedMarks: Number(question.awardedMarks) || 0,
       maxMarks: Number(question.maxMarks) || 0,
       allowedIncrement: [0.25, 0.5, 1].includes(Number(question.allowedIncrement)) ? Number(question.allowedIncrement) : 0.5,
@@ -143,7 +157,7 @@ Produce the CBSE diagnostic result and exclude fully correct questions from gaps
       confidence: Math.max(0, Math.min(1, Number(question.confidence) || 0)),
       aiDisposition: "accepted",
       reviewed: false,
-      criteria: Array.isArray(question.criteria) ? question.criteria.map((criterion: any, criterionIndex: number) => ({
+      criteria: Array.isArray(question.criteria) ? question.criteria.map((criterion: RawItem, criterionIndex: number) => ({
         id: String(criterion.id || `${question.id || `q${index + 1}`}.c${criterionIndex + 1}`),
         label: String(criterion.label || `Criterion ${criterionIndex + 1}`),
         awardedMarks: Number(criterion.awardedMarks) || 0,
@@ -153,7 +167,7 @@ Produce the CBSE diagnostic result and exclude fully correct questions from gaps
       })) : [],
     }));
     if (!questions.length) throw new Error("The grading proposal did not contain question-level decisions.");
-    const proposedMaximum = questions.reduce((sum: number, question: any) => sum + question.maxMarks, 0);
+    const proposedMaximum = questions.reduce((sum: number, question: { maxMarks: number }) => sum + question.maxMarks, 0);
     if (Math.abs(proposedMaximum - maxMarks) > 0.001) throw new Error("The question-level maximum marks did not match the assessment total.");
     return Response.json({
       score: Math.max(0, Math.min(maxMarks, Number(result.score) || 0)), maxMarks, questions, gaps, feedback: result.feedback,

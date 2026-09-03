@@ -1,11 +1,33 @@
 "use client";
 import { useEffect,useState } from "react";
 
+/**
+ * The payload `get_shared_student_report` builds in Postgres, passed straight
+ * through by app/api/shares/[token]/route.ts. Optional fields are the ones a
+ * resource may legitimately omit for its type - a study guide has `guide`, a
+ * worksheet has `content`.
+ */
+type SharedGap={concept:string;mastery:number;finding?:string;rework?:string};
+type SharedTopic={concept:string;explanation?:string;workedExample?:string};
+type SharedQuestion={question:string};
+type SharedResource={
+  id:string;
+  type:string;
+  title:string;
+  guide?:{topics?:SharedTopic[]};
+  content?:{mcqQuestions?:SharedQuestion[];subjectiveQuestions?:SharedQuestion[]};
+};
+type SharedReport={
+  student:{name:string;className?:string};
+  assessment:{title:string;subject:string;score:number;maxMarks:number;feedback?:string;gaps?:SharedGap[]};
+  resources:SharedResource[];
+};
+
 export default function StudentSharePage({params}:{params:Promise<{token:string}>|{token:string}}){
-  const [data,setData]=useState<any>(null),[error,setError]=useState("");
+  const [data,setData]=useState<SharedReport|null>(null),[error,setError]=useState("");
   useEffect(()=>{void Promise.resolve(params).then(({token})=>fetch(`/api/shares/${encodeURIComponent(token)}`,{cache:"no-store"})).then(async response=>{const payload=await response.json();if(!response.ok)throw new Error(payload.error);setData(payload)}).catch(reason=>setError(reason.message))},[params]);
   if(error)return <main className="parent-dashboard"><section className="parent-card"><h1>Student report unavailable</h1><p>{error}</p></section></main>;
   if(!data)return <main className="parent-dashboard"><section className="parent-card"><h1>Loading student learning dashboard…</h1></section></main>;
   const percentage=Math.round(data.assessment.score/Math.max(1,data.assessment.maxMarks)*100);
-  return <main className="parent-dashboard"><header className="parent-hero"><img src="/brand/logo.png" alt="EduAI Hub"/><p>Student learning dashboard</p><h1>{data.student.name}</h1><span>{data.student.className} · {data.assessment.subject}</span></header><section className="parent-summary"><article><small>Assessment</small><b>{data.assessment.title}</b></article><article><small>Score</small><b>{data.assessment.score}/{data.assessment.maxMarks}</b></article><article><small>Percentage</small><b>{percentage}%</b></article><article><small>Reports ready</small><b>{data.resources.length+1}</b></article></section><section className="parent-card"><h2>Learning-gap report</h2><p>{data.assessment.feedback||"Teacher-reviewed learning analysis."}</p>{(data.assessment.gaps||[]).map((gap:any)=><article className="parent-gap" key={gap.concept}><header><b>{gap.concept}</b><span>{gap.mastery}% mastery</span></header><p>{gap.finding}</p><small>{gap.rework}</small></article>)}<button onClick={()=>window.print()}>Download or print report</button></section>{data.resources.map((resource:any)=><section className="parent-card" key={resource.id}><p className="parent-label">{resource.type}</p><h2>{resource.title}</h2>{resource.guide?.topics?.map((topic:any)=><article className="parent-gap" key={topic.concept}><h3>{topic.concept}</h3><p>{topic.explanation}</p><b>Worked example</b><p>{topic.workedExample}</p></article>)}{resource.content&&<><h3>Practice questions</h3><ol>{[...(resource.content.mcqQuestions||[]),...(resource.content.subjectiveQuestions||[])].map((question:any,index:number)=><li key={index}>{question.question}</li>)}</ol></>}<button onClick={()=>window.print()}>Download or print</button></section>)}</main>;
+  return <main className="parent-dashboard"><header className="parent-hero"><img src="/brand/logo.png" alt="EduAI Hub"/><p>Student learning dashboard</p><h1>{data.student.name}</h1><span>{data.student.className} · {data.assessment.subject}</span></header><section className="parent-summary"><article><small>Assessment</small><b>{data.assessment.title}</b></article><article><small>Score</small><b>{data.assessment.score}/{data.assessment.maxMarks}</b></article><article><small>Percentage</small><b>{percentage}%</b></article><article><small>Reports ready</small><b>{data.resources.length+1}</b></article></section><section className="parent-card"><h2>Learning-gap report</h2><p>{data.assessment.feedback||"Teacher-reviewed learning analysis."}</p>{(data.assessment.gaps||[]).map(gap=><article className="parent-gap" key={gap.concept}><header><b>{gap.concept}</b><span>{gap.mastery}% mastery</span></header><p>{gap.finding}</p><small>{gap.rework}</small></article>)}<button onClick={()=>window.print()}>Download or print report</button></section>{data.resources.map(resource=><section className="parent-card" key={resource.id}><p className="parent-label">{resource.type}</p><h2>{resource.title}</h2>{resource.guide?.topics?.map(topic=><article className="parent-gap" key={topic.concept}><h3>{topic.concept}</h3><p>{topic.explanation}</p><b>Worked example</b><p>{topic.workedExample}</p></article>)}{resource.content&&<><h3>Practice questions</h3><ol>{[...(resource.content.mcqQuestions||[]),...(resource.content.subjectiveQuestions||[])].map((question,index)=><li key={index}>{question.question}</li>)}</ol></>}<button onClick={()=>window.print()}>Download or print</button></section>)}</main>;
 }

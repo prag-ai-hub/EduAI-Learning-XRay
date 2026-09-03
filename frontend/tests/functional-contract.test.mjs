@@ -16,7 +16,10 @@ test("persists workspace records in cloud storage with an offline cache", () => 
 });
 
 test("covers the complete teacher improvement cycle", () => {
-  for (const step of ["Create assessment", "Upload student work", "Questions & rubric", "AI processing", "Teacher review", "Final approval", "Learning X-Ray", "Intervention", "Follow-up", "Publish grades"]) {
+  // "Upload and classify evidence" is UploadDialogV2, the dialog actually wired
+  // at title==="upload". The old marker was the title of a superseded
+  // UploadDialog that nothing rendered - the assertion passed on dead code.
+  for (const step of ["Create assessment", "Upload and classify evidence", "Questions & rubric", "AI processing", "Teacher review", "Final approval", "Learning X-Ray", "Intervention", "Follow-up", "Publish grades"]) {
     assert.ok(app.includes(step), `missing teacher step: ${step}`);
   }
 });
@@ -36,7 +39,7 @@ test("uploaded files remain discoverable with cloud bytes and an offline cache",
 });
 
 test("teacher modules have persisted, actionable views", () => {
-  for (const module of ["Students", "Resources", "Achievements", "Reports", "Settings"]) assert.ok(app.includes(`"${module}"`), `missing ${module}`);
+  for (const name of ["Students", "Resources", "Achievements", "Reports", "Settings"]) assert.ok(app.includes(`"${name}"`), `missing ${name}`);
   for (const dialog of ["student-evidence", "worksheet", "grading-settings", "consent-settings", "security-settings"]) assert.ok(app.includes(dialog), `missing dialog ${dialog}`);
 });
 
@@ -89,18 +92,23 @@ test("learning-gap worksheet cycle is complete and downloadable", () => {
 });
 
 test("grading stays bound to the selected uploaded assessment", () => {
-  for (const capability of ["assessment.subject", "questionPaperFileId", "answerKey:assessment.answerKey", "Graded answer sheet:", "Grade answer sheet"]) {
+  for (const capability of ["assessment.subject", "questionPaperFileId", "answerKey:assessment.answerKey", "Grade answer sheet"]) {
     assert.ok(app.includes(capability), `missing selected-assessment grading behavior: ${capability}`);
   }
   assert.match(app, /openAssessment\(selected\.id,"Review"\)/);
-  assert.match(app, /a\.files\.find/);
+  // The displayed sheet must be looked up from the selected result, not held
+  // separately. Previously a loose /a\.files\.find/ that only ever matched the
+  // superseded LegacyReview component.
+  assert.match(app, /assessment\.files\.find\(file=>file\.id===current\.fileId\)/);
 });
 
 test("answer-sheet role explicitly chooses grading or learning-gap analysis", () => {
   for (const capability of ["Grade answer sheet", "View learning gaps", "Select answer sheet for analysis", "Continue to grading & teacher review", "Read teacher marks & diagnose learning gaps", "Question paper", "Answer sheet", "gradedFileIds"]) {
     assert.ok(app.includes(capability), `missing explicit grading choice: ${capability}`);
   }
-  assert.match(app, /assessmentHasGrades/);
+  // Whether a sheet is already graded is decided from gradeResults at the point
+  // of use. Was /assessmentHasGrades/, a helper nothing called.
+  assert.match(app, /alreadyGraded=Boolean\(assessment\.gradeResults/);
   assert.match(app, /type="radio"/);
 });
 

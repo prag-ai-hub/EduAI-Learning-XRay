@@ -50,7 +50,7 @@ export default function ParentPage(){
   })();return()=>{alive=false}},[]);
 
   if(error)return <main className="parent-dashboard"><section className="parent-card"><h1>Reports unavailable</h1><p>{error}</p></section></main>;
-  if(!children)return <main className="app-loading"><img src="/brand/logo.png" alt="EduAI Hub"/><b>Loading your children's reports…</b></main>;
+  if(!children)return <main className="app-loading"><img src="/brand/logo.png" alt="EduAI Hub"/><b>Loading your children&apos;s reports…</b></main>;
 
   return <main className="parent-dashboard">
     <header className="parent-hero">
@@ -62,7 +62,7 @@ export default function ParentPage(){
 
     {!children.length&&<section className="parent-card">
       <h2>Nothing here yet</h2>
-      <p>Ask your child's teacher for an invite code. Once it is redeemed, their teacher-approved learning reports appear here automatically.</p>
+      <p>Ask your child&apos;s teacher for an invite code. Once it is redeemed, their teacher-approved learning reports appear here automatically.</p>
     </section>}
 
     {children.map(child=><section className="parent-card" key={child.studentId}>
@@ -86,6 +86,6 @@ export default function ParentPage(){
       </>}
     </section>)}
 
-    <footer className="parent-card"><small>These reports are prepared and approved by your child's teacher. They do not show other students, and they are not used for ranking.</small></footer>
+    <footer className="parent-card"><small>These reports are prepared and approved by your child&apos;s teacher. They do not show other students, and they are not used for ranking.</small></footer>
   </main>;
 }
