@@ -764,6 +764,7 @@ type DirectorySchool = {
   id:string; name:string; city:string|null; board:string|null;
   status:"Pending"|"Active"|"Suspended"|"Closed";
   created_at:string; approved_at:string|null; suspended_at:string|null;
+  user_count?:number; student_count?:number;
 };
 
 const SCHOOL_FILTERS=["All","Pending","Active","Suspended","Closed"] as const;
@@ -789,15 +790,19 @@ function SchoolDirectory({notify}:W<"notify">){
   const [rows,setRows]=useState<DirectorySchool[]|null>(null);
   const [error,setError]=useState("");
   const [filter,setFilter]=useState<string>("All");
+  const [search,setSearch]=useState("");
   const [asking,setAsking]=useState<{id:string;verb:string;label:string}|null>(null);
   const [reason,setReason]=useState("");
   const [busy,setBusy]=useState(false);
 
-  const load=async(next:string)=>{
+  const load=async(nextFilter:string,nextSearch:string)=>{
     setError("");
     try{
-      const query=next==="All"?"":`?status=${encodeURIComponent(next)}`;
-      const payload=await djangoApi.get<{results:DirectorySchool[]}>(`/api/v1/schools/${query}`);
+      const query=new URLSearchParams();
+      if(nextFilter!=="All")query.set("status",nextFilter);
+      if(nextSearch.trim())query.set("search",nextSearch.trim());
+      const suffix=query.toString()?`?${query}`:"";
+      const payload=await djangoApi.get<{results:DirectorySchool[]}>(`/api/v1/schools/${suffix}`);
       setRows(payload.results);
     }catch(cause){
       setRows([]);
@@ -805,7 +810,12 @@ function SchoolDirectory({notify}:W<"notify">){
     }
   };
 
-  useResetOnChange(filter,()=>{setRows(null);void load(filter)});
+  // Debounced: the directory is a server-side search, so a request per
+  // keystroke would be a request per keystroke.
+  useEffect(()=>{
+    const timer=window.setTimeout(()=>{setRows(null);void load(filter,search)},280);
+    return()=>window.clearTimeout(timer);
+  },[filter,search]);
 
   const act=async(school:DirectorySchool,verb:string,withReason:string|null)=>{
     setBusy(true);
@@ -814,7 +824,7 @@ function SchoolDirectory({notify}:W<"notify">){
         withReason===null?{}:{reason:withReason});
       notify(`${school.name} ${verb==="approve"?"approved":verb==="reject"?"rejected":verb==="suspend"?"suspended":"reactivated"}.`);
       setAsking(null);setReason("");
-      await load(filter);
+      await load(filter,search);
     }catch(cause){
       const message=cause instanceof ApiError?cause.message:"That action could not be completed.";
       setError(message);notify(message,"error");
@@ -823,7 +833,9 @@ function SchoolDirectory({notify}:W<"notify">){
 
   return <section className="card span-2">
     <CardHead eyebrow="Platform" title="Schools">
-      <button className="secondary" onClick={()=>{setRows(null);void load(filter)}}>Refresh</button>
+      <input className="compact-input" placeholder="Search name, city, board or id"
+             aria-label="Search schools" value={search} onChange={e=>setSearch(e.target.value)}/>
+      <button className="secondary" onClick={()=>{setRows(null);void load(filter,search)}}>Refresh</button>
     </CardHead>
     <div className="filters">
       {SCHOOL_FILTERS.map(item=>
@@ -832,13 +844,13 @@ function SchoolDirectory({notify}:W<"notify">){
     {error&&<p className="form-error" role="alert">{error}</p>}
     {rows===null&&!error&&<p className="insight" role="status">Loading schools…</p>}
     {rows!==null&&rows.length===0&&!error&&
-      <div className="list-item"><b>No schools with this status</b><span className="status neutral">Empty</span></div>}
+      <div className="list-item"><b>{search.trim()?`No schools match “${search.trim()}”`:"No schools with this status"}</b><span className="status neutral">Empty</span></div>}
     {rows!==null&&rows.length>0&&<div className="user-table">
       {rows.map(school=><div className="user-row" key={school.id}>
         <span className="file-icon">{school.name.slice(0,2).toUpperCase()}</span>
         <div>
           <b>{school.name}</b>
-          <small>{[school.city,school.board].filter(Boolean).join(" · ")||"No location recorded"}</small>
+          <small>{[school.city,school.board].filter(Boolean).join(" · ")||"No location recorded"}{typeof school.user_count==="number"?` · ${school.user_count} staff · ${school.student_count} students`:""}</small>
         </div>
         <span className={`status ${SCHOOL_STATUS_TONE[school.status]||"neutral"}`}>{school.status}</span>
         <small>{new Date(school.created_at).toLocaleDateString()}</small>

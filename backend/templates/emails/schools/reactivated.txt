@@ -1,0 +1,8 @@
+Hello {{ name }},
+
+{{ school.name }} has been reactivated on EduAI Learning X-Ray. Full access is
+restored and your teachers can resume work immediately.
+
+{{ frontend_url }}
+
+— EduAI Hub

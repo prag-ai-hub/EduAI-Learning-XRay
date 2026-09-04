@@ -162,9 +162,9 @@ Status: ▢ not started · ◐ partly covered by existing work · ✔ done
 | 6.1 | 'Register your school' API + pending→approved workflow | 3.5 | ✔ **Done.** Identity-only auth, always Pending, fully audited — but see §4a |
 | 6.2 | Super Admin approve / reject / suspend endpoints | 3.0 | ✔ **Done.** Validated state machine, reason required, every transition audited |
 | 6.3 | Rate limiting & throttling (DRF throttle classes) | 2.0 | ✔ **Done.** Applied per view and tested; production needs `REDIS_URL` (see below) |
-| 7.1 | Cross-school directory API (list / filter / search) | 3.0 | ▢ |
-| 7.2 | Security headers & CORS hardening | 2.5 | ◐ `prod.py` headers + CORS allowlist in place |
-| 7.3 | Registration / suspension notification emails | 3.0 | ▢ |
+| 7.1 | Cross-school directory API (list / filter / search) | 3.0 | ✔ **Done.** Whitelisted filter/search/ordering, per-school staff and student counts, wired into the console |
+| 7.2 | Security headers & CORS hardening | 2.5 | ✔ **Done.** CORS narrowed to /api/, CSP and no-store on API responses, and deploy checks that refuse a wildcard config |
+| 7.3 | Registration / suspension notification emails | 3.0 | ✔ **Done.** Five templates, sent after commit, best-effort so a decision is never undone by SMTP |
 | 8.1 | Secrets audit: `.env.example` + `.gitignore` review | 2.0 | ◐ both rewritten for the split; audit not run |
 | 8.2 | Input validation & serializer-level sanitization | 3.0 | ▢ |
 | 8.3 | Audit logging for admin actions | 3.5 | ◐ write side done — every school transition and cross-tenant read is recorded; the read/reporting surface is not built |
@@ -344,6 +344,48 @@ it the limits are advisory.
 
 **Not done:** the payment gateway account, KYC and real sandbox keys (5.3) need
 the client — only the env plumbing and rotation policy are in place.
+
+## 5d. Day 7 — delivered 2026-09-04
+
+**Directory (7.1).** Filter by status, board and city; free-text search across
+name, city and board with an exact match on id - a partial uuid is a fishing
+expedition, not a search. Filtering and ordering are whitelisted: a caller must
+not be able to sort by a column simply because it exists, and an unknown status
+is a 400 rather than a silently unfiltered list, because a reviewer seeing the
+wrong queue approves the wrong school. Rows carry staff and student counts,
+annotated with `distinct=True` - without it the two joins multiply and both
+counts come back as their product. The console gained a debounced search box
+and shows the counts.
+
+**Hardening (7.2).** CORS narrowed to `^/api/` so `/health` carries no
+cross-origin story, with explicit method and header allowlists. API responses
+get `default-src 'none'` CSP and `no-store`, because per-user data behind a
+shared cache is one user reading another's rows.
+
+The substantive part is three deployment checks that make misconfiguration
+fail loudly: a wildcard or empty `CORS_ALLOWED_ORIGINS`, a wildcard
+`ALLOWED_HOSTS`, and a placeholder `SECRET_KEY` or empty
+`SUPABASE_JWT_SECRET`. They are errors, not warnings - a warning in a deploy
+log is something nobody reads - and they are silent when DEBUG is on.
+
+They were also nearly useless: `@register` only runs on import, and nothing
+imported the module, so all three were registered but never ran. What looked
+like passing checks was Django's own. Fixed by importing from `AppConfig.ready`
+and verified against a six-case matrix.
+
+**Emails (7.3).** Five templates - registered, approved, rejected, suspended,
+reactivated - sent to a school's active administrators only; a disabled account
+is skipped, since mail to an address that lost access for a reason is worse
+than no mail. Sending happens in `transaction.on_commit`, so a rolled-back
+registration never tells the applicant it worked, and failures are logged and
+swallowed: an approval is not undone because SMTP timed out. Logs record the
+count and the template, never the address or the body.
+
+A trap worth recording: `on_commit` callbacks are discarded when a test's
+transaction rolls back, so the notification tests would have passed while no
+email was ever sent. They use `django_capture_on_commit_callbacks`.
+
+265 backend tests, up from 224.
 
 ## 6. Risks carried by the compression
 

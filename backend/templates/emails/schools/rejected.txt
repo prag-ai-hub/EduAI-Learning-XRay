@@ -1,0 +1,13 @@
+Hello {{ name }},
+
+We were unable to approve the registration for {{ school.name }}.
+
+Reason given by our team:
+{{ reason }}
+
+If you believe this is a mistake, or you can provide further information,
+reply to this email and we will take another look.
+
+Registration reference: {{ school.id }}
+
+— EduAI Hub

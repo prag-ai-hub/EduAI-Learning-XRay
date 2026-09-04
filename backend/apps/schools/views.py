@@ -16,6 +16,7 @@ from __future__ import annotations
 import uuid
 
 from django.db import transaction
+from django.db.models import Count
 from django.utils import timezone
 from rest_framework import status as http
 from rest_framework.decorators import action
@@ -31,6 +32,7 @@ from apps.accounts.roles import SCHOOL_ADMIN
 from apps.audit.services import Action, record
 from apps.common.viewsets import ReadOnlyPlatformViewSet
 
+from . import filters, notifications
 from .models import School
 from .serializers import (
     SchoolDecisionSerializer,
@@ -107,6 +109,9 @@ class SchoolRegistrationView(APIView):
             entity_id=school.id,
             detail={"name": school.name, "city": school.city, "board": school.board},
         )
+        # After commit: a registration that rolls back must not have emailed
+        # the applicant to say it succeeded.
+        transaction.on_commit(lambda: notifications.notify(school, "registered"))
         return Response(
             {"school": SchoolSerializer(school).data, "role": SCHOOL_ADMIN},
             status=http.HTTP_201_CREATED,
@@ -138,10 +143,12 @@ class SchoolDirectoryViewSet(ReadOnlyPlatformViewSet):
 
     Read is `platform.schools.list`; each decision carries its own capability so
     a future "reviewer" role could approve without being able to suspend.
-    Day 7 adds filtering and search over this list.
+    Filtering, search and ordering are whitelisted in `filters.py`: a caller
+    must not be able to order by, or filter on, a column simply because it
+    exists.
     """
 
-    queryset = School.objects.all().order_by("-created_at")
+    queryset = School.objects.all()
     serializer_class = SchoolSerializer
     lookup_value_regex = "[^/]+"  # school ids are text, not integers
     capability_map = {
@@ -154,11 +161,17 @@ class SchoolDirectoryViewSet(ReadOnlyPlatformViewSet):
     }
 
     def get_queryset(self):
-        queryset = super().get_queryset()
-        status_filter = self.request.query_params.get("status")
-        if status_filter:
-            queryset = queryset.filter(status=status_filter)
-        return queryset
+        queryset = (
+            super()
+            .get_queryset()
+            .annotate(
+                # distinct=True: without it the two joins multiply and both counts
+                # come back as their product.
+                user_count=Count("users", distinct=True),
+                student_count=Count("students", distinct=True),
+            )
+        )
+        return filters.apply(queryset, self.request.query_params)
 
     # --- transitions --------------------------------------------------------
 
@@ -193,6 +206,10 @@ class SchoolDirectoryViewSet(ReadOnlyPlatformViewSet):
             entity_id=school.id,
             detail={"from": expected[0], "to": to, **({"reason": reason} if reason else {})},
         )
+        # The school is told what happened and why. Sending never blocks the
+        # decision - see apps/schools/notifications.py.
+        event = audit_action.split(".", 1)[1]
+        transaction.on_commit(lambda: notifications.notify(school, event, reason=reason or ""))
         return Response(SchoolSerializer(school).data)
 
     def _reason(self, request) -> str:

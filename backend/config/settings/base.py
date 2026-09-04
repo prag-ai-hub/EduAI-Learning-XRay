@@ -67,6 +67,7 @@ MIDDLEWARE = [
     # otherwise be indistinguishable from having forgotten it.
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "apps.common.middleware.ApiSecurityHeadersMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -161,6 +162,8 @@ REST_FRAMEWORK = {
 # Where this service answers, and where the web app lives. Used to build
 # absolute links in outbound email and in API documentation - a relative link
 # in an email goes nowhere.
+DEFAULT_FROM_EMAIL = env("MAIL_DEFAULT_SENDER", default="no-reply@eduaihub.in")
+
 API_BASE_URL = env("API_BASE_URL", default="")
 FRONTEND_URL = env("FRONTEND_URL", default="")
 
@@ -197,6 +200,14 @@ CORS_ALLOW_CREDENTIALS = env("CORS_ALLOW_CREDENTIALS")
 # Origins allowed to submit unsafe methods. Needed for the browsable API and
 # the admin when either is reached through a tunnel or a non-default host.
 CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
+
+# CORS applies to the API only. /health is a plain probe and needs no
+# cross-origin story; narrowing the regex keeps the header off everything else.
+CORS_URLS_REGEX = r"^/api/.*$"
+# Only what the frontend actually sends. An open list is an invitation to
+# probe for endpoints that accept something unusual.
+CORS_ALLOW_METHODS = ("GET", "POST", "PATCH", "DELETE", "OPTIONS")
+CORS_ALLOW_HEADERS = ("authorization", "content-type", "accept", "origin")
 
 # --------------------------------------------------------------------------
 # I18N / static

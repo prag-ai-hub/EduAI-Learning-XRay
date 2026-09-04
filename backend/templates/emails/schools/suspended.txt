@@ -1,0 +1,14 @@
+Hello {{ name }},
+
+Access to {{ school.name }} on EduAI Learning X-Ray has been suspended.
+
+Reason given by our team:
+{{ reason }}
+
+Work already completed is not deleted, and you can still sign in to view your
+existing reports, payment history and invoices. New assessments and analysis
+are paused until the suspension is lifted.
+
+Reply to this email to discuss reactivating the account.
+
+— EduAI Hub

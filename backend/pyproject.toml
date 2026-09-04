@@ -28,6 +28,11 @@ ignore = [
 # a nullable text column must be mapped as nullable or the model lies about
 # the database.
 "apps/*/models.py" = ["DJ001"]
+# S105/S106 flag hardcoded secrets. Tests are where deliberately fake ones
+# belong - asserting that a placeholder SECRET_KEY is rejected requires writing
+# a placeholder SECRET_KEY.
+"**/tests/*.py" = ["S105", "S106"]
+"conftest.py" = ["S105", "S106"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["apps", "config"]

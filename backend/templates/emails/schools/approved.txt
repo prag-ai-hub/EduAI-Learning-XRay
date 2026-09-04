@@ -1,0 +1,11 @@
+Hello {{ name }},
+
+{{ school.name }} has been approved and is now active on EduAI Learning X-Ray.
+
+You can sign in and start inviting teachers:
+{{ frontend_url }}
+
+As the school administrator you can add staff, set up classes and manage your
+subscription from the admin area.
+
+— EduAI Hub

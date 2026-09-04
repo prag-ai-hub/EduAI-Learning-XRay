@@ -14,6 +14,11 @@ class SchoolSerializer(serializers.ModelSerializer):
     lifecycle actions, never a PATCH, so every transition is validated and
     audited."""
 
+    # Annotated by the directory queryset. Absent on the single-object views,
+    # where a count would cost a query nobody asked for - hence required=False.
+    user_count = serializers.IntegerField(read_only=True, required=False)
+    student_count = serializers.IntegerField(read_only=True, required=False)
+
     class Meta:
         model = School
         fields = [
@@ -26,8 +31,11 @@ class SchoolSerializer(serializers.ModelSerializer):
             "approved_at",
             "approved_by",
             "suspended_at",
+            "user_count",
+            "student_count",
         ]
-        read_only_fields = fields
+        # Only the model-backed fields: DRF rejects naming a declared field here.
+        read_only_fields = [f for f in fields if not f.endswith("_count")]
 
 
 class SchoolRegistrationSerializer(BaseSerializer):
