@@ -33,7 +33,10 @@ test("Prompt 5 UI exposes finalization checks and validates PDF signature",()=>{
   assert.match(ui,/Finalize immutable HPC/);
   assert.match(ui,/signature!=="%PDF-"/);
   assert.match(ui,/Academic X-Ray marks remain separate/);
-  assert.match(ui,/foundation\?\.enabled\?<><HpcLearnerProfiles/);
+  assert.match(ui,/foundation\?\.enabled\?<HpcPromptWorkspace/);
+  for(const tab of ["Learner setup","Evidence","Progress & support","Applied learning","Annual card"])assert.ok(ui.includes(`label:"${tab}"`),`missing HPC workspace tab ${tab}`);
+  assert.match(ui,/role="tablist"/);
+  assert.match(ui,/role="tabpanel"/);
   assert.match(ui,/All Academic X-Ray workflows continue unchanged/);
   assert.match(ui,/Copy secure parent link/);
 });

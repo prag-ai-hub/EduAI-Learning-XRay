@@ -395,8 +395,10 @@ function TeacherApp({profile,module,state,selected,openAssessment,open,notify,up
   return <Reports state={state} open={open} notify={notify}/>;
 }
 
+type HpcFoundation={enabled:boolean;frameworkReady:boolean;approvedFrameworkCount:number;framework:null|{versionLabel:string;sourceName:string;sourceReference:string;sections:{section_code:string;title:string;sort_order:number;required:boolean}[];abilities:{code:string;label:string}[];performanceLevels:{code:string;label:string;score_from:number;score_to:number}[];domains:{code:string;label:string}[]}};
+
 function HolisticProgress({profile,state}:{profile:DemoProfile;state:DemoState}){
-  const [foundation,setFoundation]=useState<{enabled:boolean;frameworkReady:boolean;approvedFrameworkCount:number;framework:null|{versionLabel:string;sourceName:string;sourceReference:string;sections:{section_code:string;title:string;sort_order:number;required:boolean}[];abilities:{code:string;label:string}[];performanceLevels:{code:string;label:string;score_from:number;score_to:number}[];domains:{code:string;label:string}[]}}|null>(null);
+  const [foundation,setFoundation]=useState<HpcFoundation|null>(null);
   const [error,setError]=useState("");
   useEffect(()=>{let active=true;void authFetch("/api/hpc/foundation",{cache:"no-store"}).then(async response=>{
     const payload=await response.json();
@@ -407,30 +409,41 @@ function HolisticProgress({profile,state}:{profile:DemoProfile;state:DemoState})
   return <><PageHead eyebrow="PARAKH / NCERT framework" title="Holistic Progress" subtitle="A separate evidence-led learner view. Learning X-Ray marks and HPC observations are never combined."><span className="status neutral">Middle Stage · Classes 6–8</span></PageHead>
     <section className="hpc-hero"><div><p className="eyebrow">HPC foundation</p><h2>See the learner beyond a score.</h2><p>Structure follows the official Middle Stage guide: general information, All About Me, ambition, parent-teacher partnership, student progress, and holistic year summary.</p></div><div className="hpc-source"><b>Official source</b><a href="https://parakh.ncert.gov.in/how-to-fill-the-hpc-middle-stage" target="_blank" rel="noreferrer">PARAKH/NCERT · How to fill the HPC (Middle Stage) ↗</a></div></section>
     {error?<section className="card"><p className="eyebrow">Setup check</p><h2>HPC setup is unavailable</h2><p>{error}</p></section>:<><section className="metric-grid hpc-metrics"><Metric label="HPC access" value={foundation?.enabled?"Enabled":"Safely off"} note="Controlled independently per school"/><Metric label="Approved frameworks" value={foundation?String(foundation.approvedFrameworkCount):"…"} note="Official source version required"/><Metric label="Middle Stage learners" value={String(middleStageStudents.length)} note="Learner profiles stay separate"/><Metric label="Academic score blending" value="Never" note="No combined score or ranking"/></section>
-    <section className="hpc-roadmap"><article><span>Part A</span><h3>Know the learner</h3><p>General information, interests, All About Me and learner context.</p></article><article><span>Part A</span><h3>Plan with the learner</h3><p>Ambition, goals and parent-teacher partnership.</p></article><article><span>Part B</span><h3>Record progress</h3><p>Observations linked to curricular goals, competencies and abilities.</p></article><article><span>Part C</span><h3>Summarise growth</h3><p>Teacher-approved holistic summary for the academic year.</p></article></section>
-    <section className="card hpc-readiness"><div><p className="eyebrow">Next controlled step</p><h2>{foundation?.frameworkReady?"Official framework is ready for learner setup":"Awaiting approved PARAKH framework package"}</h2><p>{foundation?.frameworkReady?`${foundation.framework?.versionLabel} is loaded from ${foundation.framework?.sourceName}. The school can enable its approved stage template before teachers record evidence.`:"The product foundation is in place, but official descriptors are not invented or auto-filled. A school administrator must approve the source version before learner-level records can be opened."}</p></div><div className="hpc-abilities"><b>Middle Stage assessment lenses</b>{(foundation?.framework?.abilities||[{code:"awareness",label:"Awareness"},{code:"sensitivity",label:"Sensitivity"},{code:"creativity",label:"Creativity"}]).map(ability=><span key={ability.code}>{ability.label}</span>)}<small>Performance descriptors are controlled by the approved official framework version.</small></div></section>
-    {foundation?.framework&&<section className="card span-2 hpc-framework-library"><CardHead eyebrow="Approved PARAKH / NCERT catalogue" title="Middle Stage framework library"><a className="link" href={foundation.framework.sourceReference} target="_blank" rel="noreferrer">Open source ↗</a></CardHead><div className="hpc-framework-grid"><div><b>HPC card sections</b>{foundation.framework.sections.map(section=><span key={section.section_code}>{section.title}</span>)}</div><div><b>Performance levels</b>{foundation.framework.performanceLevels.map(level=><span key={level.code}>{level.label} · {level.score_from}–{level.score_to}</span>)}</div><div><b>Subject domains</b>{foundation.framework.domains.map(domain=><span key={domain.code}>{domain.label}</span>)}</div></div></section>}
-    {foundation?.enabled?<><HpcLearnerProfiles />
-    <HpcPromptOneWorkspace />
-    <HpcCompetencyMapper />
-    <HpcEvidenceWorkspace />
-    <HpcEvidenceReview />
-    <HpcActivityMapping />
-    <HpcPromptTwoForms />
-    <HpcBulkObservations request={authFetch}/>
-    <HpcMultiPerspectiveEvidence />
-    <HpcEvidenceMapping />
-    <HpcEvidenceDashboard />
-    <HpcCompletionWorkspace />
-    <HpcAnnualReporting profile={profile}/>
-    <HpcPromptThreeWorkspace />
-    <HpcHolisticSupportActions />
-    <HpcHolisticProfile />
-    <HpcAppliedLearning />
-    <HpcAppliedLearningDetails />
-    <HpcAppliedLearningReview /></>:<section className="card span-2"><p className="eyebrow">HPC feature flag</p><h2>Holistic Progress is safely off</h2><p>Enable HPC for this school to open learner records. All Academic X-Ray workflows continue unchanged.</p></section>}
+    {foundation?.enabled?<HpcPromptWorkspace foundation={foundation} profile={profile}/>:<section className="card span-2"><p className="eyebrow">HPC feature flag</p><h2>Holistic Progress is safely off</h2><p>Enable HPC for this school to open learner records. All Academic X-Ray workflows continue unchanged.</p></section>}
     </>}
   </>;
+}
+
+type HpcPromptTab="prompt1"|"prompt2"|"prompt3"|"prompt4"|"prompt5";
+const hpcPromptTabs:{id:HpcPromptTab;step:string;label:string;description:string}[]=[
+  {id:"prompt1",step:"1",label:"Learner setup",description:"Profile, context, goals and official framework mapping"},
+  {id:"prompt2",step:"2",label:"Evidence",description:"Activities, observations, feedback, uploads and moderation"},
+  {id:"prompt3",step:"3",label:"Progress & support",description:"Progress wheel, strengths and evidence-linked support"},
+  {id:"prompt4",step:"4",label:"Applied learning",description:"Secondary projects, inquiry, courses and final rubrics"},
+  {id:"prompt5",step:"5",label:"Annual card",description:"Readiness checks, yearly summary and final HPC"}
+];
+
+function HpcPromptWorkspace({foundation,profile}:{foundation:HpcFoundation;profile:DemoProfile}){
+  const [activeTab,setActiveTab]=useState<HpcPromptTab>("prompt1");
+  const active=hpcPromptTabs.find(tab=>tab.id===activeTab)||hpcPromptTabs[0];
+  return <section className="hpc-workspace-shell">
+    <div className="hpc-workspace-tabs" role="tablist" aria-label="Holistic Progress workflow">
+      {hpcPromptTabs.map(tab=><button key={tab.id} id={`hpc-tab-${tab.id}`} type="button" role="tab" aria-selected={activeTab===tab.id} aria-controls={`hpc-panel-${tab.id}`} className={activeTab===tab.id?"active":""} onClick={()=>setActiveTab(tab.id)}><span>{tab.step}</span><b>{tab.label}</b><small>{tab.description}</small></button>)}
+    </div>
+    <header className="hpc-workspace-heading"><div><p className="eyebrow">HPC workflow · Step {active.step} of 5</p><h2>{active.label}</h2><p>{active.description}</p></div><span className="status neutral">Prompt {active.step}</span></header>
+    <div className="hpc-tab-panel" id={`hpc-panel-${activeTab}`} role="tabpanel" aria-labelledby={`hpc-tab-${activeTab}`} tabIndex={0}>
+      {activeTab==="prompt1"&&<>
+        <section className="hpc-roadmap"><article><span>Part A</span><h3>Know the learner</h3><p>General information, interests, All About Me and learner context.</p></article><article><span>Part A</span><h3>Plan with the learner</h3><p>Ambition, goals and parent-teacher partnership.</p></article><article><span>Part B</span><h3>Record progress</h3><p>Observations linked to curricular goals, competencies and abilities.</p></article><article><span>Part C</span><h3>Summarise growth</h3><p>Teacher-approved holistic summary for the academic year.</p></article></section>
+        <section className="card hpc-readiness"><div><p className="eyebrow">Framework readiness</p><h2>{foundation.frameworkReady?"Official framework is ready for learner setup":"Awaiting approved PARAKH framework package"}</h2><p>{foundation.frameworkReady?`${foundation.framework?.versionLabel} is loaded from ${foundation.framework?.sourceName}. Create or select a learner below to begin.`:"A school administrator must approve the source version before learner-level records can be opened."}</p></div><div className="hpc-abilities"><b>Middle Stage assessment lenses</b>{(foundation.framework?.abilities||[]).map(ability=><span key={ability.code}>{ability.label}</span>)}<small>Performance descriptors are controlled by the approved official framework version.</small></div></section>
+        {foundation.framework&&<section className="card span-2 hpc-framework-library"><CardHead eyebrow="Approved PARAKH / NCERT catalogue" title="Middle Stage framework library"><a className="link" href={foundation.framework.sourceReference} target="_blank" rel="noreferrer">Open source ↗</a></CardHead><div className="hpc-framework-grid"><div><b>HPC card sections</b>{foundation.framework.sections.map(section=><span key={section.section_code}>{section.title}</span>)}</div><div><b>Performance levels</b>{foundation.framework.performanceLevels.map(level=><span key={level.code}>{level.label} · {level.score_from}–{level.score_to}</span>)}</div><div><b>Subject domains</b>{foundation.framework.domains.map(domain=><span key={domain.code}>{domain.label}</span>)}</div></div></section>}
+        <HpcLearnerProfiles/><HpcPromptOneWorkspace/><HpcCompetencyMapper/>
+      </>}
+      {activeTab==="prompt2"&&<><HpcEvidenceWorkspace/><HpcEvidenceReview/><HpcActivityMapping/><HpcPromptTwoForms/><HpcBulkObservations request={authFetch}/><HpcMultiPerspectiveEvidence/><HpcEvidenceMapping/><HpcEvidenceDashboard/><HpcCompletionWorkspace/></>}
+      {activeTab==="prompt3"&&<><HpcPromptThreeWorkspace/><HpcHolisticSupportActions/><HpcHolisticProfile/></>}
+      {activeTab==="prompt4"&&<><HpcAppliedLearning/><HpcAppliedLearningDetails/><HpcAppliedLearningReview/></>}
+      {activeTab==="prompt5"&&<HpcAnnualReporting profile={profile}/>}
+    </div>
+  </section>;
 }
 
 function useHpcLearnerUpdates(setLearners: (learners:any[])=>void){
