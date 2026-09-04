@@ -121,19 +121,18 @@ Produce the CBSE diagnostic result and exclude fully correct questions from gaps
     try { result = JSON.parse(raw); } catch { throw new Error("The learning-analysis service returned invalid diagnostic data."); }
     const paperQuestionMarks = extractQuestionMarks(body.questionPaperText);
     if (!paperQuestionMarks.length) throw new Error("Question-level marks could not be read from the validated question paper. Correct its OCR so every question mark is visible before grading.");
-    const questionMarkMap = new Map(paperQuestionMarks.map(question => [question.id, question.maxMarks]));
     const maxMarks = paperQuestionMarks.reduce((sum, question) => sum + question.maxMarks, 0);
     if (!Number.isFinite(maxMarks) || maxMarks <= 0 || maxMarks > 10000) throw new Error("The assessment total marks could not be determined reliably.");
     const gaps = (Array.isArray(result.gaps) ? result.gaps : [])
       .filter((gap: any) => gap && typeof gap.concept === "string" && Number(gap.mastery) < 100)
       .map((gap: any) => ({ ...gap, mastery: Math.max(0, Math.min(99, Number(gap.mastery) || 0)) }));
-    const questions = (Array.isArray(result.questions) ? result.questions : []).map((question: any, index: number) => ({
+    const aiQuestions = (Array.isArray(result.questions) ? result.questions : []).map((question: any, index: number) => ({
       id: String(question.id || `q${index + 1}`).trim(),
       label: String(question.label || question.id || `Question ${index + 1}`).trim(),
       pageNumber: Math.max(1, Math.floor(Number(question.pageNumber) || 1)),
       attemptState: ["attempted", "not_attempted", "excluded"].includes(question.attemptState) ? question.attemptState : "attempted",
       awardedMarks: Number(question.awardedMarks) || 0,
-      maxMarks: questionMarkMap.get(questionMarkId(String(question.id || question.label || ""))) || 0,
+      maxMarks: Number(question.maxMarks) || 0,
       allowedIncrement: [0.25, 0.5, 1].includes(Number(question.allowedIncrement)) ? Number(question.allowedIncrement) : 0.5,
       evidence: String(question.evidence || ""),
       rationale: String(question.rationale || ""),
@@ -149,11 +148,30 @@ Produce the CBSE diagnostic result and exclude fully correct questions from gaps
         rationale: String(criterion.rationale || ""),
       })) : [],
     }));
-    if (!questions.length) throw new Error("The grading proposal did not contain question-level decisions.");
-    if (questions.some((question: any) => !question.maxMarks)) throw new Error("Every AI-graded question must match a marked question in the uploaded question paper.");
-    if (questions.length !== paperQuestionMarks.length) throw new Error("The AI-graded questions did not exactly match the marked questions in the uploaded question paper.");
-    const proposedMaximum = questions.reduce((sum: number, question: any) => sum + question.maxMarks, 0);
-    if (Math.abs(proposedMaximum - maxMarks) > 0.001) throw new Error("The question-level maximum marks did not match the assessment total.");
+    if (!aiQuestions.length) throw new Error("The grading proposal did not contain question-level decisions.");
+    // The paper defines the canonical questions and their maxima. AI labels can
+    // vary after OCR (for example, Q1(a), 1a, or Section A · 1(a)), so first
+    // match by normalized question ID and then use the paper's printed order.
+    // Unmatched printed questions are retained as not attempted rather than
+    // allowing an AI/default maximum to enter the reviewed grade.
+    const usedAiQuestions = new Set<number>();
+    const questions = paperQuestionMarks.map((paperQuestion, paperIndex) => {
+      let aiIndex = aiQuestions.findIndex((question: any, index: number) => !usedAiQuestions.has(index) && questionMarkId(question.id || question.label) === paperQuestion.id);
+      if (aiIndex < 0) aiIndex = aiQuestions.findIndex((_: any, index: number) => !usedAiQuestions.has(index));
+      const aiQuestion = aiIndex >= 0 ? aiQuestions[aiIndex] : null;
+      if (aiIndex >= 0) usedAiQuestions.add(aiIndex);
+      const attempted = aiQuestion?.attemptState === "attempted";
+      return {
+        ...(aiQuestion || {}),
+        id: paperQuestion.id,
+        label: aiQuestion?.label || `Question ${paperIndex + 1}`,
+        maxMarks: paperQuestion.maxMarks,
+        awardedMarks: attempted ? Math.max(0, Math.min(paperQuestion.maxMarks, Number(aiQuestion.awardedMarks) || 0)) : 0,
+        attemptState: aiQuestion?.attemptState || "not_attempted",
+        evidence: aiQuestion?.evidence || "",
+        rationale: aiQuestion?.rationale || "No answer was matched to this printed question.",
+      };
+    });
     return Response.json({
       score: Math.max(0, Math.min(maxMarks, Number(result.score) || 0)), maxMarks, questions, gaps, feedback: result.feedback,
       timing: [{ provider: "openai", ms, ok: true }], credits: credit?.[0]||null,
