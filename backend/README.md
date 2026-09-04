@@ -14,10 +14,7 @@ credits and sharing exactly as it does today.
 backend/
 ├── manage.py
 ├── pyproject.toml            ruff + pytest configuration
-├── requirements/
-│   ├── base.txt              runtime
-│   ├── dev.txt               + pytest, ruff, stubs
-│   └── prod.txt              + whitenoise
+├── requirements.txt          every dependency, one file
 ├── config/                   the project, not a feature
 │   ├── settings/
 │   │   ├── base.py           shared; every secret read from the environment
@@ -44,7 +41,7 @@ backend/
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements/dev.txt
+pip install -r requirements.txt
 cp .env.example .env          # then fill it in
 
 psql "$PSQL_URL" -f scripts/bootstrap_schema.sql       # once per database

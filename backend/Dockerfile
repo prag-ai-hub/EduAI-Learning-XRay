@@ -19,8 +19,8 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # Dependencies first, so a code change does not reinstall them.
-COPY requirements/ requirements/
-RUN pip install -r requirements/prod.txt
+COPY requirements.txt .
+RUN pip install -r requirements.txt
 
 COPY . .
 

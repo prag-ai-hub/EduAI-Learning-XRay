@@ -34,10 +34,10 @@ install: install-frontend install-backend ## Install both workspaces
 install-frontend: ## npm install in frontend/
 	cd $(FRONTEND) && npm install
 
-install-backend: ## Create backend/.venv and install dev requirements
+install-backend: ## Create backend/.venv and install every dependency
 	python3 -m venv $(BACKEND)/.venv
 	$(PIP) install --upgrade pip
-	$(PIP) install -r $(BACKEND)/requirements/dev.txt
+	$(PIP) install -r $(BACKEND)/requirements.txt
 
 # ---------------------------------------------------------------- run
 dev-frontend: ## Next.js dev server on :3000

@@ -1,0 +1,61 @@
+# ============================  Backend Dependencies  ============================
+#
+# The single dependency file for the Django service. Install everything with:
+#
+#     python -m venv .venv && . .venv/bin/activate
+#     pip install -r requirements.txt
+#
+# or, from the repo root:  make install-backend
+#
+# ONE file on purpose: a split base/dev/prod set means a new package can be
+# added to the wrong one and only fail in the environment nobody tested. The
+# cost is that the container carries the test tooling; that is the trade we
+# chose, and it keeps "what does this service need" answerable by one file.
+#
+# ANY new library goes here, in the right section, pinned. tests/test_requirements.py
+# fails the build if the code imports something this file does not declare.
+#
+# Pinned to a minor line (~=) so installs are reproducible without freezing
+# security patches out.
+
+
+# --- Framework ---------------------------------------------------------------
+Django~=5.2.0
+djangorestframework~=3.16.0
+
+# --- Configuration -----------------------------------------------------------
+# Reads every setting from the environment; no secret has a working default.
+django-environ~=0.12.0
+
+# --- HTTP boundary -----------------------------------------------------------
+# CORS for the Cloudflare-hosted frontend calling this API from a browser.
+django-cors-headers~=4.7.0
+
+# Outbound calls from the AI proxy. Chosen for real timeout control - a hung
+# provider must not hold a worker open.
+httpx~=0.28.0
+
+# --- Database ----------------------------------------------------------------
+# The existing Supabase-hosted Postgres. [binary] ships wheels, so no compiler
+# is needed in the image.
+psycopg[binary]~=3.2.0
+
+# --- Authentication ----------------------------------------------------------
+# Verifies the Supabase-issued JWT: signature, expiry, audience.
+PyJWT~=2.10.0
+
+# --- Serving -----------------------------------------------------------------
+# WSGI server for the dedicated Python host. Cloudflare Workers cannot run
+# Django, so this service is deployed separately - see docs/DEPLOYMENT.md.
+gunicorn~=23.0.0
+
+# Serves static files from the container, so nothing else is needed in front of
+# gunicorn but a TLS-terminating load balancer.
+whitenoise~=6.8.0
+
+# --- Testing and linting -----------------------------------------------------
+pytest~=8.3.0
+pytest-django~=4.9.0
+# Coverage is not in the default run; available for `pytest --cov=apps`.
+pytest-cov~=6.0.0
+ruff~=0.9.0
