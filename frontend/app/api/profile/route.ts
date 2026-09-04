@@ -24,28 +24,44 @@ export async function PUT(request: Request) {
     return Response.json({ error: "Name and school are required." }, { status: 400 });
   }
   const db = getSupabaseServer();
+
   // M7 invariant: a SuperAdmin belongs to no school, and SchoolAdmin/Teacher
-  // must belong to one. Creating a school for a SuperAdmin would be rejected by
-  // users_role_school_scope_check.
+  // must belong to one.
   const isSuperAdmin = /^priyadarshini\.adap@eduaihub(?:\.in)?$/i.test(authUser.email || "");
-  const schoolId = isSuperAdmin ? null : `school-${authUser.id}`;
-  if (schoolId) {
-    const { error: schoolError } = await db.from("schools").upsert({
-      id: schoolId,
-      name: schoolName,
-      status: "Active",
-      updated_at: new Date().toISOString(),
-    });
-    if (schoolError) return Response.json({ error: schoolError.message }, { status: 500 });
+
+  const { data: existing, error: lookupError } = await db
+    .from("users").select("school_id,role,status").eq("id", authUser.id).maybeSingle();
+  if (lookupError) return Response.json({ error: lookupError.message }, { status: 500 });
+
+  // This route used to create a school with status "Active" for anyone
+  // completing their profile, which bypassed the approval workflow entirely -
+  // the gate was real via /register-school and absent here. It no longer
+  // creates schools at all.
+  //
+  // An invited teacher already has a row (the invitation upserts one), so they
+  // never reach this branch. Someone signing up alone is sent to register their
+  // school, which is the single reviewed front door.
+  if (!existing && !isSuperAdmin) {
+    return Response.json(
+      {
+        error: "Register your school to finish setting up your account.",
+        code: "school_registration_required",
+      },
+      { status: 409 },
+    );
   }
+
+  const schoolId = isSuperAdmin ? null : existing?.school_id ?? null;
   const profile = {
     id: authUser.id,
     school_id: schoolId,
     email: authUser.email || "",
     name,
-    role: isSuperAdmin ? "SuperAdmin" : "Teacher",
+    // Role and status are never chosen here: an existing row keeps what it has,
+    // and the seeded SuperAdmin is recognised by email.
+    role: isSuperAdmin ? "SuperAdmin" : existing?.role || "Teacher",
     phone: String(body.phone || "").trim(),
-    status: "Active",
+    status: existing?.status || "Active",
     profile_json: {
       subjects: String(body.subjects || "").trim(),
       classes: String(body.classes || "").trim(),

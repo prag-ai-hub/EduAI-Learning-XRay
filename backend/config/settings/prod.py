@@ -7,9 +7,28 @@ DEBUG = False
 
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")  # explicit, no wildcard fallback
 
+# WhiteNoise serves the static files gunicorn would otherwise have no way to,
+# so the image needs no second web server in front of it.
+MIDDLEWARE = [  # noqa: F405
+    MIDDLEWARE[0],  # noqa: F405 - corsheaders must stay first
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    *MIDDLEWARE[1:],  # noqa: F405
+]
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
+
 # --- Transport security ---------------------------------------------------
-SECURE_SSL_REDIRECT = True
+# On by default. Turn it off only where TLS terminates at the edge and the
+# platform speaks plain HTTP to the container.
+SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# The liveness probe comes from inside the network over plain HTTP. Redirecting
+# it makes a broken app look healthy, because `curl -f` treats a 301 as
+# success - the probe would pass without ever reaching the application.
+SECURE_REDIRECT_EXEMPT = [r"^health$"]
 SECURE_HSTS_SECONDS = 31_536_000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True

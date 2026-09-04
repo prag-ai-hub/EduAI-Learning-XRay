@@ -83,4 +83,5 @@ committed template.
 | [docs/SECRETS-AND-ROTATION.md](docs/SECRETS-AND-ROTATION.md) | Every credential, who holds it, and how it is rotated |
 | [docs/LOCAL-TESTING.md](docs/LOCAL-TESTING.md) | Running the stack locally |
 | [docs/MANUAL-VERIFICATION.md](docs/MANUAL-VERIFICATION.md) | Manual QA checklist |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Building, configuring and shipping the Django service |
 | [backend/README.md](backend/README.md) | Django layout, settings, and conventions |

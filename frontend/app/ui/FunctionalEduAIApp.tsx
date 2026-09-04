@@ -403,7 +403,12 @@ function TeacherAuth({client,session,needsProfile,error,onProfile}:{client:Supab
     event.preventDefault();const data=new FormData(event.currentTarget);setBusy(true);setMessage("");
     const response=await authFetch("/api/profile",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.fromEntries(data))});
     const payload=await response.json();setBusy(false);
-    if(!response.ok){setMessage(payload.error||"Could not save your profile.");return}
+    if(!response.ok){
+      // Signing up alone no longer creates a school silently - registration is
+      // reviewed, so send them to the one front door that does it properly.
+      if(payload.code==="school_registration_required"){location.assign("/register-school");return}
+      setMessage(payload.error||"Could not save your profile.");return
+    }
     const accountRole:Role=toRole(payload.profile.role);onProfile({id:payload.profile.id,name:payload.profile.name,email:payload.profile.email,role:accountRole,school:payload.profile.school,label:`${accountRole} account`});
   };
   return <main className="demo-auth">

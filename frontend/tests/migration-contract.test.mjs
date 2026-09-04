@@ -234,6 +234,19 @@ test("a Parent is not routed into an administrator console", () => {
 
 test("the profile route cannot create a SuperAdmin that violates the invariant", () => {
   const profileRoute = readFileSync(new URL("../app/api/profile/route.ts", import.meta.url), "utf8");
-  assert.match(profileRoute, /const schoolId = isSuperAdmin \? null : `school-\$\{authUser\.id\}`/);
+  // A SuperAdmin belongs to no school; everyone else keeps the school their
+  // existing row already has. The route no longer invents one.
+  assert.match(profileRoute, /const schoolId = isSuperAdmin \? null : existing\?\.school_id \?\? null/);
   assert.doesNotMatch(profileRoute, /\? "Admin" : "Teacher"/);
+});
+
+test("completing a profile cannot create a school, let alone an active one", () => {
+  // This route used to upsert a school with status "Active", which bypassed the
+  // approval workflow entirely: the gate was real via /register-school and
+  // absent here. Someone signing up alone is now sent to register properly.
+  const profileRoute = readFileSync(new URL("../app/api/profile/route.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(profileRoute, /from\("schools"\)\s*\.upsert/);
+  assert.doesNotMatch(profileRoute, /status: "Active"/);
+  assert.match(profileRoute, /school_registration_required/);
+  assert.match(profileRoute, /status: 409/);
 });
