@@ -69,8 +69,16 @@ check: lint test ## Lint then test everything
 # ---------------------------------------------------------------- database
 # supabase/ is shared: the Next.js app and the Django service read the same
 # Postgres. SQL migrations there remain the schema source of truth.
+# supabase/config.toml reads the Google OAuth pair via env(...) at start time,
+# and that pair is declared in backend/.env - the one file that holds every
+# credential. Only those variables are exported: sourcing the whole file would
+# put the database password and the provider keys into the CLI's environment
+# for no reason.
 db-start: ## Start the local Supabase stack
-	$(SUPABASE) start
+	@set -a; \
+	  [ -f $(BACKEND)/.env ] && . <(grep -E '^SUPABASE_AUTH_EXTERNAL_' $(BACKEND)/.env) || true; \
+	  set +a; \
+	  $(SUPABASE) start
 
 db-stop: ## Stop the local Supabase stack
 	$(SUPABASE) stop

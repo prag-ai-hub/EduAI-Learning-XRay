@@ -27,7 +27,7 @@ Two rules apply without exception:
 | `MISTRAL_API_KEY` | `backend/.env` only | The Django AI proxy | 90 days | Billable spend. |
 | `PAYMENT_GATEWAY_KEY_SECRET` | `backend/.env` | Django only | 90 days, immediately on suspicion | Ability to move money. Test and live keys are separated by environment and never shipped to the browser. |
 | `PAYMENT_GATEWAY_WEBHOOK_SECRET` | `backend/.env` | Django only | With the gateway key | Forged webhooks accepted as genuine, which drives subscription and payment state. |
-| Google OAuth client secret | root `.env` | Local Supabase stack only | See incident below | Sign-in as any Google user against the local stack. In production this lives in the Supabase dashboard, not in a file. |
+| Google OAuth client secret | `backend/.env` | Local Supabase stack, via `make db-start` | See incident below | Sign-in as any Google user against the local stack. In production this lives in the Supabase dashboard, not in a file. |
 | `MAIL_PASSWORD` | `backend/.env` | Django only | 180 days | Outbound mail sent as the product. |
 
 `SUPABASE_JWT_SECRET` is the highest-value secret in the system after
@@ -35,6 +35,31 @@ Two rules apply without exception:
 token against it (`backend/apps/accounts/authentication.py`). Treat rotating it
 as a coordinated change — Supabase reissues tokens, and every in-flight token
 becomes invalid, so users are signed out.
+
+### Where each secret lives, and why not everywhere
+
+`backend/.env` is the single declaration for every credential the project uses,
+including the Google OAuth pair that Django itself does not consume - the
+Supabase CLI receives it from there at `make db-start`.
+
+Two values remain outside it, deliberately:
+
+**`SUPABASE_PUBLISHABLE_KEY`** is the anon key. It is public by design,
+constrained by RLS, and has to reach a browser to work at all. Serving it from
+Django would make sign-in depend on the Django service being up, which is an
+availability cost for no security gain.
+
+**`SUPABASE_SECRET_KEY`** is the service-role key, and it is the one real
+outstanding item. `frontend/lib/supabase-server.ts` uses it for every database
+call in thirteen routes, and `frontend/lib/share-tokens.ts` uses it as the HMAC
+key for parent share links. Removing it means moving that data access into
+Django - the migration this phase declares out of scope.
+
+It should not be "fetched from the backend" instead. A secret retrieved at
+runtime is weaker than one held in the environment: it turns a static config
+value into a network dependency, and anything that compromises the frontend's
+token to Django then yields the database as well. The way to remove a key from
+a service is to move the work that needs it, not to move the key across a wire.
 
 ### A note on naming
 

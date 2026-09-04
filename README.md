@@ -65,8 +65,8 @@ There are two, and they are deliberately not merged:
 
 | File | Read by | Holds |
 | --- | --- | --- |
-| `.env` | `frontend/` and the Supabase CLI | Supabase URL and keys, OpenAI/Mistral keys, Google OAuth for the local stack |
-| `backend/.env` | the Django service | `DB_*` connection parts, the Supabase **JWT secret**, the AI provider keys, payment gateway keys, `SECRET_KEY` |
+| `.env` | `frontend/` and the Supabase CLI | Supabase URL, the service-role key and the public anon key |
+| `backend/.env` | the Django service | Every other credential: `DB_*`, Supabase **JWT secret**, AI provider keys, payment gateway keys, SMTP, Google OAuth, `SECRET_KEY` |
 
 `frontend/.env` is a symlink to the root `.env`, so the Vite/Cloudflare dev
 server and the Supabase CLI read one file. On a platform without symlinks, copy
