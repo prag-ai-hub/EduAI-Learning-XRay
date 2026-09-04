@@ -1,5 +1,5 @@
 import { getAuthenticatedUser, unauthorized } from "../../../lib/supabase-auth";
-import { extractQuestionMarks, questionMarkId } from "../../../lib/question-marks";
+import { extractQuestionMarks, extractQuestionPaperTotal, questionMarkId } from "../../../lib/question-marks";
 
 type GradeRequest = {
   subject?: string; className?: string; studentName?: string; fileName?: string; maxMarks?: number;
@@ -120,9 +120,7 @@ Produce the CBSE diagnostic result and exclude fully correct questions from gaps
     let result;
     try { result = JSON.parse(raw); } catch { throw new Error("The learning-analysis service returned invalid diagnostic data."); }
     const paperQuestionMarks = extractQuestionMarks(body.questionPaperText);
-    if (!paperQuestionMarks.length) throw new Error("Question-level marks could not be read from the validated question paper. Correct its OCR so every question mark is visible before grading.");
-    const maxMarks = paperQuestionMarks.reduce((sum, question) => sum + question.maxMarks, 0);
-    if (!Number.isFinite(maxMarks) || maxMarks <= 0 || maxMarks > 10000) throw new Error("The assessment total marks could not be determined reliably.");
+    const printedTotal = extractQuestionPaperTotal(body.questionPaperText);
     const gaps = (Array.isArray(result.gaps) ? result.gaps : [])
       .filter((gap: any) => gap && typeof gap.concept === "string" && Number(gap.mastery) < 100)
       .map((gap: any) => ({ ...gap, mastery: Math.max(0, Math.min(99, Number(gap.mastery) || 0)) }));
@@ -149,29 +147,29 @@ Produce the CBSE diagnostic result and exclude fully correct questions from gaps
       })) : [],
     }));
     if (!aiQuestions.length) throw new Error("The grading proposal did not contain question-level decisions.");
-    // The paper defines the canonical questions and their maxima. AI labels can
-    // vary after OCR (for example, Q1(a), 1a, or Section A · 1(a)), so first
-    // match by normalized question ID and then use the paper's printed order.
-    // Unmatched printed questions are retained as not attempted rather than
-    // allowing an AI/default maximum to enter the reviewed grade.
-    const usedAiQuestions = new Set<number>();
-    const questions = paperQuestionMarks.map((paperQuestion, paperIndex) => {
-      let aiIndex = aiQuestions.findIndex((question: any, index: number) => !usedAiQuestions.has(index) && questionMarkId(question.id || question.label) === paperQuestion.id);
-      if (aiIndex < 0) aiIndex = aiQuestions.findIndex((_: any, index: number) => !usedAiQuestions.has(index));
-      const aiQuestion = aiIndex >= 0 ? aiQuestions[aiIndex] : null;
-      if (aiIndex >= 0) usedAiQuestions.add(aiIndex);
-      const attempted = aiQuestion?.attemptState === "attempted";
+    // Keep every question identified from the uploaded paper by the grading
+    // model. Deterministically parsed printed marks override matching values,
+    // but a partial OCR regex match must never shrink a 20-mark paper to 4.
+    const usedPaperMarks = new Set<number>();
+    const questions = aiQuestions.map((aiQuestion: any) => {
+      const normalizedId = questionMarkId(aiQuestion.id || aiQuestion.label);
+      const paperIndex = paperQuestionMarks.findIndex((paperQuestion, index) => !usedPaperMarks.has(index) && paperQuestion.id === normalizedId);
+      if (paperIndex >= 0) usedPaperMarks.add(paperIndex);
+      const questionMax = paperIndex >= 0 ? paperQuestionMarks[paperIndex].maxMarks : aiQuestion.maxMarks;
+      if (!Number.isFinite(questionMax) || questionMax <= 0) throw new Error(`Marks could not be read for ${aiQuestion.label}.`);
+      const attempted = aiQuestion.attemptState === "attempted";
       return {
-        ...(aiQuestion || {}),
-        id: paperQuestion.id,
-        label: aiQuestion?.label || `Question ${paperIndex + 1}`,
-        maxMarks: paperQuestion.maxMarks,
-        awardedMarks: attempted ? Math.max(0, Math.min(paperQuestion.maxMarks, Number(aiQuestion.awardedMarks) || 0)) : 0,
-        attemptState: aiQuestion?.attemptState || "not_attempted",
-        evidence: aiQuestion?.evidence || "",
-        rationale: aiQuestion?.rationale || "No answer was matched to this printed question.",
+        ...aiQuestion,
+        id: normalizedId || aiQuestion.id,
+        maxMarks: questionMax,
+        awardedMarks: attempted ? Math.max(0, Math.min(questionMax, Number(aiQuestion.awardedMarks) || 0)) : 0,
       };
     });
+    const questionTotal = questions.reduce((sum: number, question: any) => sum + question.maxMarks, 0);
+    const modelTotal = Number(result.maxMarks);
+    const maxMarks = printedTotal ?? (Number.isFinite(modelTotal) && modelTotal > 0 ? modelTotal : questionTotal);
+    if (!Number.isFinite(maxMarks) || maxMarks <= 0 || maxMarks > 10000) throw new Error("The assessment total marks could not be determined reliably.");
+    if (Math.abs(questionTotal - maxMarks) > 0.001) throw new Error(`The question-wise marks (${questionTotal}) do not add up to the paper total (${maxMarks}). Please check that all paper pages are uploaded clearly.`);
     return Response.json({
       score: Math.max(0, Math.min(maxMarks, Number(result.score) || 0)), maxMarks, questions, gaps, feedback: result.feedback,
       timing: [{ provider: "openai", ms, ok: true }], credits: credit?.[0]||null,
@@ -179,7 +177,7 @@ Produce the CBSE diagnostic result and exclude fully correct questions from gaps
         questionPaper: body.questionPaperName || null,
         markingScheme: body.markingSchemeName || (body.answerKey ? "Typed marking scheme" : null),
         modelAnswer: body.modelAnswerName || null,
-        totalMarksSource: "validated-question-paper-ocr",
+        totalMarksSource: printedTotal ? "printed-question-paper-total" : "validated-question-paper-analysis",
         analysisScope: "wrong-partial-unanswered-only",
       },
     });

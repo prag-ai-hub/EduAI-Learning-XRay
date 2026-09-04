@@ -14,6 +14,22 @@ export function extractQuestionMarks(questionPaperText: string): QuestionMark[] 
   return [...marks.entries()].map(([id, maxMarks]) => ({ id, maxMarks }));
 }
 
+// Read the paper-wide maximum separately from question-level marks. OCR often
+// preserves "Maximum Marks: 20" even when marks printed in tables or at the
+// right margin cannot all be recovered by the question regex.
+export function extractQuestionPaperTotal(questionPaperText: string) {
+  const patterns = [
+    /\b(?:maximum|max\.?|total)\s*marks?\s*[:=\-]?\s*(\d+(?:\.\d+)?)/i,
+    /\bmarks?\s*[:=\-]?\s*(\d+(?:\.\d+)?)\s*(?:maximum|max\.?|total)\b/i,
+    /\bM\.?\s*M\.?\s*[:=\-]?\s*(\d+(?:\.\d+)?)/i,
+  ];
+  for (const pattern of patterns) {
+    const value = Number(questionPaperText.match(pattern)?.[1]);
+    if (Number.isFinite(value) && value > 0 && value <= 10000) return value;
+  }
+  return null;
+}
+
 export function questionMarkId(value: string) {
   const normalized = value.toLowerCase().match(/\d+(?:\s*\(?\s*[a-z]\s*\)?)?/);
   return normalized ? `q${normalized[0].replace(/[\s().]/g, "")}` : "";
