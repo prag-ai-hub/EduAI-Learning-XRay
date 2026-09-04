@@ -167,10 +167,10 @@ Status: ▢ not started · ◐ partly covered by existing work · ✔ done
 | 7.3 | Registration / suspension notification emails | 3.0 | ▢ |
 | 8.1 | Secrets audit: `.env.example` + `.gitignore` review | 2.0 | ◐ both rewritten for the split; audit not run |
 | 8.2 | Input validation & serializer-level sanitization | 3.0 | ▢ |
-| 8.3 | Audit logging for admin actions | 3.5 | ▢ `apps/audit` scaffolded only |
+| 8.3 | Audit logging for admin actions | 3.5 | ◐ write side done — every school transition and cross-tenant read is recorded; the read/reporting surface is not built |
 | 9.1 | School Admin subscription/plan status API | 2.5 | ▢ |
 | 9.2 | QA: RBAC + JWT auth across all 4 roles | 4.0 | ▢ |
-| 9.3 | **PII hotfix in `grade/route.ts`** | 2.0 | ▢ — see §4 |
+| 9.3 | **PII hotfix in `grade/route.ts`** | 2.0 | ✔ **Done 2026-09-03**, via the AI proxy: the name is replaced before the request leaves and mapped back on the response; a failed scrub refuses to send |
 | 10.1–10.3 | Frontend: Super Admin console, school registration form, API client with JWT | 8.5 | ✔ **Pulled forward and done** alongside Days 5–6, so the feature ships end to end |
 
 ### Week 3 — B2C parent portal, payment core (42.5 hrs)
@@ -188,8 +188,8 @@ Status: ▢ not started · ◐ partly covered by existing work · ✔ done
 | 13.3 | Parent dashboard: reports/interventions API | 2.5 | ▢ (read model exists: M11) |
 | 14.1–14.2 | Frontend: B2B checkout UI, parent dashboard UI | 6.0 | ▢ |
 | 14.3 | B2C credit top-up logic | 2.5 | ▢ |
-| 15.1 | New OpenAI proxy endpoint (server-side key isolation) | 3.0 | ▢ `apps/aiproxy` scaffolded only |
-| 15.2 | PII scrubbing / anonymization layer for the proxy | 3.0 | ▢ |
+| 15.1 | New OpenAI proxy endpoint (server-side key isolation) | 3.0 | ✔ **Pulled forward, done 2026-09-03.** Provider keys exist only in the backend |
+| 15.2 | PII scrubbing / anonymization layer for the proxy | 3.0 | ✔ **Pulled forward, done 2026-09-03** |
 | 15.3 | Plans & pricing schema finalization | 2.5 | ◐ M9 shape exists; pricing not finalized |
 
 ### Week 4 — Payment completion, testing, deployment (42.5 hrs)
