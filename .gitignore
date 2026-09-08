@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Monorepo: frontend/ (Next.js) + backend/ (Django) + supabase/ (shared schema)
+# Monorepo: app/ (Expo) + backend/ (Django) + supabase/ (shared schema)
 # Patterns are intentionally unanchored so they apply inside both workspaces.
 # ---------------------------------------------------------------------------
 
@@ -9,6 +9,17 @@
 !.env.example
 *.pem
 *.key
+
+# Credential files with no `.env` in the name, which the rules above would
+# otherwise miss. backend/tests/test_secrets_audit.py asserts each of these is
+# actually matched, so a rule that stops applying is a failing test.
+.envrc
+*service-account*.json
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+*.pfx
 
 # --- Node / Next.js / Cloudflare (frontend/) -------------------------------
 node_modules/
@@ -31,6 +42,16 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 .vercel
+
+# --- Expo / React Native (app/) -----------------------------------------
+.expo/
+expo-env.d.ts
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+*.orig.*
+web-build/
 
 # --- Python / Django (backend/) --------------------------------------------
 __pycache__/
@@ -64,3 +85,6 @@ work/
 
 # Redundant source snapshot (superseded by git history)
 EduAI-Learning-X-Ray-source-*.zip
+
+# --- Runtime logs (backend/logs/) ------------------------------------------
+logs/*.log

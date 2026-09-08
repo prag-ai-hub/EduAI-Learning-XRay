@@ -12,9 +12,9 @@ import pytest
 
 from apps.accounts.models import Invitation, User
 from apps.accounts.roles import ALL_ROLES
-from apps.billing.models import Invoice, Payment, PaymentEvent, Plan, Subscription
-from apps.parents.models import ParentStudentLink, Relationship
-from apps.schools.models import School
+from apps.billing.subscriptions.models import Invoice, Payment, PaymentEvent, Plan, Subscription
+from apps.tenants.parents.models import ParentStudentLink, Relationship
+from apps.tenants.schools.models import School
 from tests.sql_schema import allowed_values
 
 
@@ -61,7 +61,7 @@ def test_invitations_cannot_carry_the_superadmin_role():
 
 
 def test_the_gateway_is_pinned_to_razorpay_in_the_schema():
-    from apps.billing.models import GATEWAY_RAZORPAY
+    from apps.billing.subscriptions.models import GATEWAY_RAZORPAY
 
     for table in ("plans", "subscriptions", "payments", "payment_events"):
         assert allowed_values(table, "gateway") == {GATEWAY_RAZORPAY}, (

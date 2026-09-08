@@ -8,6 +8,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 FRONTEND := frontend
+APP      := app
 BACKEND  := backend
 PY       := $(BACKEND)/.venv/bin/python
 PIP      := $(BACKEND)/.venv/bin/pip
@@ -17,8 +18,9 @@ PIP      := $(BACKEND)/.venv/bin/pip
 # binary is invoked by path, with the repo root as the working directory.
 SUPABASE := $(FRONTEND)/node_modules/.bin/supabase
 
-.PHONY: help install install-frontend install-backend dev-frontend dev-backend \
-        test test-frontend test-backend lint lint-frontend lint-backend \
+.PHONY: help install install-frontend install-app install-backend \
+        dev-frontend dev-app dev-web build-app dev-backend test test-frontend test-backend \
+        lint lint-frontend lint-app lint-backend \
         check db-start db-stop db-status db-push db-reset db-test db-bootstrap \
         migrate clean
 
@@ -29,10 +31,13 @@ help: ## Show this help
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 # ---------------------------------------------------------------- setup
-install: install-frontend install-backend ## Install both workspaces
+install: install-frontend install-app install-backend ## Install every workspace
 
 install-frontend: ## npm install in frontend/
 	cd $(FRONTEND) && npm install
+
+install-app: ## npm install in app/
+	cd $(APP) && npm install
 
 install-backend: ## Create backend/.venv and install every dependency
 	python3 -m venv $(BACKEND)/.venv
@@ -43,11 +48,21 @@ install-backend: ## Create backend/.venv and install every dependency
 dev-frontend: ## Next.js dev server on :3000
 	cd $(FRONTEND) && npm run dev
 
+dev-app: ## Expo dev server - press w for web, or scan the QR with Expo Go
+	cd $(APP) && npx expo start
+
+dev-web: ## Expo on the web, at http://localhost:8081
+	cd $(APP) && npx expo start --web
+
+build-app: ## Export the app (web bundle + server API routes)
+	cd $(APP) && npx expo export --platform web
+
 dev-backend: ## Django dev server on :8000
-	cd $(BACKEND) && DJANGO_SETTINGS_MODULE=config.settings.dev .venv/bin/python manage.py runserver 8000
+	cd $(BACKEND) && DJANGO_SETTINGS_MODULE=eduai_backend.settings.dev .venv/bin/python manage.py runserver 8000
 
 # ---------------------------------------------------------------- verify
 test: test-frontend test-backend ## Run every test suite
+	@echo "note: app/ has no test suite yet - typecheck it with 'make lint-app'"
 
 test-frontend: ## Build and run the Node contract suite
 	cd $(FRONTEND) && npm test
@@ -55,16 +70,19 @@ test-frontend: ## Build and run the Node contract suite
 test-backend: ## Run the Django/pytest suite
 	cd $(BACKEND) && .venv/bin/python -m pytest
 
-lint: lint-frontend lint-backend ## Lint both workspaces
+lint: lint-frontend lint-app lint-backend ## Lint every workspace
 
 lint-frontend:
 	cd $(FRONTEND) && npm run lint
+
+lint-app:
+	cd $(APP) && npx tsc --noEmit
 
 lint-backend:
 	cd $(BACKEND) && .venv/bin/ruff check . && .venv/bin/ruff format --check .
 
 check: lint test ## Lint then test everything
-	cd $(BACKEND) && DJANGO_SETTINGS_MODULE=config.settings.prod .venv/bin/python manage.py check --deploy
+	cd $(BACKEND) && DJANGO_SETTINGS_MODULE=eduai_backend.settings.prod .venv/bin/python manage.py check --deploy
 
 # ---------------------------------------------------------------- database
 # supabase/ is shared: the Next.js app and the Django service read the same
@@ -100,7 +118,7 @@ db-bootstrap: ## Create the `django` schema for Django's own tables (once per DB
 		-f $(BACKEND)/scripts/bootstrap_schema.sql
 
 migrate: ## Apply Django migrations (backend-owned tables only)
-	cd $(BACKEND) && DJANGO_SETTINGS_MODULE=config.settings.dev .venv/bin/python manage.py migrate
+	cd $(BACKEND) && DJANGO_SETTINGS_MODULE=eduai_backend.settings.dev .venv/bin/python manage.py migrate
 
 # ---------------------------------------------------------------- housekeeping
 clean: ## Remove build output and caches from both workspaces

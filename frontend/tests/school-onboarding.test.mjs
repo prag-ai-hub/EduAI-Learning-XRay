@@ -8,6 +8,9 @@ const filesUnder = dir => readdirSync(new URL(`../${dir}`, import.meta.url), { r
 
 const read = p => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 const client = read("lib/django-api.ts");
+// The request logic and the error envelope are shared with the Expo app.
+const sharedClient = read("../app/src/shared/api/client.ts");
+const sharedErrors = read("../app/src/shared/api/errors.ts");
 const register = read("app/register-school/page.tsx");
 const app = read("app/ui/FunctionalEduAIApp.tsx");
 const config = read("app/api/auth/config/route.ts");
@@ -15,19 +18,30 @@ const config = read("app/api/auth/config/route.ts");
 // ---------------------------------------------------------------- API client
 
 test("the Django client sends the Supabase access token", () => {
-  assert.match(client, /Authorization: `Bearer \$\{token\}`/);
+  assert.match(sharedClient, /Authorization: `Bearer \$\{token\}`/);
+  // The web app is what turns a browser session into that token.
   assert.match(client, /auth\.getSession\(\)/);
 });
 
 test("the Django client refuses to guess a base URL", () => {
   // A wrong guess would send bearer tokens to whatever host resolved.
-  assert.match(client, /if \(!djangoApiUrl\)/);
-  assert.match(client, /not_configured/);
+  assert.match(sharedClient, /if \(!base\)/);
+  assert.match(sharedClient, /not_configured/);
+  assert.doesNotMatch(sharedClient, /localhost:8000|127\.0\.0\.1:8000/);
   assert.doesNotMatch(client, /localhost:8000|127\.0\.0\.1:8000/);
 });
 
 test("a request without a session fails before it is sent", () => {
-  assert.match(client, /if \(!token\) throw new ApiError/);
+  assert.match(sharedClient, /if \(!token\) throw new ApiError/);
+});
+
+test("the shared package stays platform-free", () => {
+  // It is bundled by a Cloudflare Worker, a browser and Metro. A platform API
+  // or a dependency here breaks one of the three.
+  for (const source of [sharedClient, sharedErrors, read("../app/src/shared/api/types.ts")]) {
+    assert.doesNotMatch(source, /\bwindow\b|\bdocument\b|react-native|next\//);
+    assert.doesNotMatch(source, /^import .* from "(?!\.)/m, "shared code must have no dependencies");
+  }
 });
 
 test("the base URL is served from the server, never hardcoded in the bundle", () => {
@@ -37,8 +51,16 @@ test("the base URL is served from the server, never hardcoded in the bundle", ()
 
 test("the error envelope is unwrapped rather than shown raw", () => {
   for (const part of ["envelope?.detail", "class ApiError", "fields"]) {
-    assert.ok(client.includes(part), `missing ${part}`);
+    assert.ok(sharedErrors.includes(part), `missing ${part}`);
   }
+});
+
+test("both clients share one API implementation", () => {
+  // Duplicated request logic drifts: a field renamed in the API gets fixed in
+  // one client and forgotten in the other.
+  assert.match(client, /from "\.\.\/\.\.\/app\/src\/shared\/api"/);
+  const mobile = read("../app/src/shared/api/django.ts");
+  assert.match(mobile, /\.\/shared/);
 });
 
 // ---------------------------------------------------------------- register

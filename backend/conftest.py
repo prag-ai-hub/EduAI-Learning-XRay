@@ -84,7 +84,7 @@ def make_auth_user(db):
 @pytest.fixture
 def make_school(db):
     def _make(name="Nehru Vidyalaya", status=None):
-        from apps.schools.models import School
+        from apps.tenants.schools.models import School
 
         now = timezone.now()
         return School.objects.create(
@@ -140,7 +140,7 @@ def make_grant(db):
         cannot be born expired. An already-expired one is therefore backdated:
         issued in the past, and lapsed since.
         """
-        from apps.schools.models import SupportAccessGrant
+        from apps.tenants.schools.models import SupportAccessGrant
 
         now = timezone.now()
         expires_at = now + timedelta(hours=hours)
@@ -161,7 +161,7 @@ def make_grant(db):
 @pytest.fixture
 def make_student(db):
     def _make(school, name="A. Rao"):
-        from apps.schools.models import Student
+        from apps.tenants.schools.models import Student
 
         now = timezone.now()
         return Student.objects.create(
@@ -179,7 +179,7 @@ def make_student(db):
 @pytest.fixture
 def make_link(db):
     def _make(parent, student, status=None):
-        from apps.parents.models import ParentStudentLink, Relationship
+        from apps.tenants.parents.models import ParentStudentLink, Relationship
 
         return ParentStudentLink.objects.create(
             id=uuid.uuid4(),

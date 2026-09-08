@@ -1,7 +1,7 @@
 """Permission classes for the four-tier hierarchy.
 
 These answer only "may this role do this KIND of thing?". Which rows the caller
-may touch is a separate question, answered by apps/common/tenancy.py. Keeping
+may touch is a separate question, answered by apps/tenants/schools/tenancy.py. Keeping
 them apart is what stops "SuperAdmin" quietly meaning "can read every school's
 student data".
 

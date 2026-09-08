@@ -10,8 +10,11 @@ They only fire when DEBUG is off, so local development is untouched.
 
 from __future__ import annotations
 
+from importlib.util import find_spec
+
 from django.conf import settings
 from django.core.checks import Error, register
+from django.utils.module_loading import import_string
 
 WILDCARD = "*"
 
@@ -93,4 +96,67 @@ def secrets_are_not_placeholders(app_configs, **kwargs):
                 id="eduai.E006",
             )
         )
+    return errors
+
+
+@register(deploy=True)
+def cache_backend_is_importable(app_configs, **kwargs):
+    """The cache backend is named as a string, so a missing driver fails late.
+
+    Django resolves `CACHES["default"]["BACKEND"]` by name and imports the
+    client library lazily - `import redis` sits inside `RedisCacheClient.
+    __init__`, reached only through `RedisCache._cache` on the first cache
+    operation. So setting REDIS_URL without the `redis` package builds, boots,
+    passes every other check and answers /health, then returns 500 on the first
+    throttled request. That is every endpoint in this API, and /health staying
+    green is what hides it from the load balancer.
+
+    Nothing else catches this: `tests/test_requirements.py` reads imports out of
+    source, and no source file imports the driver.
+
+    Two halves, because the failure has two shapes. `import_string` catches a
+    backend whose own module is missing or misspelled. The map catches Django's
+    built-ins, whose class imports cleanly while the driver underneath does not.
+    Deliberately no I/O: a deploy check that dials the cache would hang a
+    release when the cache is merely down, which is a different fault.
+    """
+    #: backend path -> the distribution's import name. Django ships five cache
+    #: backends; these are the three needing a third-party driver.
+    drivers = {
+        "django.core.cache.backends.redis.RedisCache": "redis",
+        "django.core.cache.backends.memcached.PyMemcacheCache": "pymemcache",
+        "django.core.cache.backends.memcached.PyLibMCCache": "pylibmc",
+    }
+
+    errors = []
+    for alias, config in (settings.CACHES or {}).items():
+        backend = config.get("BACKEND")
+        if not backend:
+            continue
+        try:
+            import_string(backend)
+        except ImportError as exc:
+            errors.append(
+                Error(
+                    f"CACHES[{alias!r}] names {backend!r}, which cannot be imported: {exc}",
+                    hint="Check the spelling, or install the package providing it.",
+                    id="eduai.E007",
+                )
+            )
+            continue
+
+        driver = drivers.get(backend)
+        if driver and find_spec(driver) is None:
+            errors.append(
+                Error(
+                    f"CACHES[{alias!r}] uses {backend!r}, but its driver "
+                    f"{driver!r} is not installed.",
+                    hint=(
+                        f"Add `{driver}` to backend/requirements.txt, pinned, and rebuild "
+                        "the image. Django imports it lazily, so without this the service "
+                        "starts healthy and then 500s on the first throttled request."
+                    ),
+                    id="eduai.E007",
+                )
+            )
     return errors

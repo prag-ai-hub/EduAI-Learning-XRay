@@ -32,7 +32,7 @@ RUN SECRET_KEY=build-only-not-used-at-runtime \
     CSRF_TRUSTED_ORIGINS=http://localhost \
     DB_NAME=x DB_USER=x DB_PASSWORD=x DB_HOST=localhost DB_PORT=5432 \
     SUPABASE_URL=http://localhost SUPABASE_JWT_SECRET=x \
-    DJANGO_SETTINGS_MODULE=config.settings.prod \
+    DJANGO_SETTINGS_MODULE=eduai_backend.settings.prod \
     python manage.py collectstatic --noinput
 
 # Never run as root: a container escape should not start with uid 0.
@@ -48,4 +48,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/health)" = "200" ] || exit 1
 
-CMD ["gunicorn", "-c", "gunicorn.conf.py", "config.wsgi:application"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "eduai_backend.wsgi:application"]

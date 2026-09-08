@@ -53,6 +53,12 @@ gunicorn~=23.0.0
 # gunicorn but a TLS-terminating load balancer.
 whitenoise~=6.8.0
 
+# Client for the shared throttle cache. Django names the backend as a settings
+# string, so nothing imports `redis` in source and the guard in
+# tests/test_requirements.py cannot see it - it is declared here by hand, and
+# eduai.E007 is what actually proves the backend can be loaded.
+redis~=5.2.0
+
 # --- Testing and linting -----------------------------------------------------
 pytest~=8.3.0
 pytest-django~=4.9.0

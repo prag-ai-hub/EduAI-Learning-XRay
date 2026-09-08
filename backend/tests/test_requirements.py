@@ -48,7 +48,14 @@ def declared() -> set[str]:
 
 
 def source_files() -> list[Path]:
-    roots = [BACKEND / "apps", BACKEND / "config", BACKEND / "tests"]
+    roots = [BACKEND / "apps", BACKEND / "eduai_backend", BACKEND / "tests"]
+    # rglob on a missing directory yields nothing and raises nothing, so a
+    # renamed package silently narrows this check instead of failing it. That
+    # is exactly how the project package went unscanned after the move to
+    # apps/<group>/<app>/: `environ` is imported only in settings, so
+    # django-environ was being validated by nobody while the suite stayed green.
+    missing = [root for root in roots if not root.is_dir()]
+    assert not missing, f"scan root(s) missing - was something renamed? {missing}"
     files = [p for root in roots for p in root.rglob("*.py")]
     files.append(BACKEND / "conftest.py")
     return [p for p in files if ".venv" not in p.parts]

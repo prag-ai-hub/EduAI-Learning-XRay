@@ -11,7 +11,7 @@ asking "does this role outrank that one" would quietly hand grading to admins.
 Two layers, kept separate on purpose:
 
   * A capability answers "may this role do this KIND of thing at all?"
-  * Tenancy answers "on WHICH rows?" - see apps/common/tenancy.py.
+  * Tenancy answers "on WHICH rows?" - see apps/tenants/schools/tenancy.py.
 
 The matrix marks some cells with a half-circle: a SuperAdmin may reach school
 administration only under a support-access grant, and a Teacher only within

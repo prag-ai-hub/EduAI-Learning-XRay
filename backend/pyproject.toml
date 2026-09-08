@@ -5,7 +5,7 @@ description = "EduAI Learning X-Ray - Django REST API for RBAC, B2B/B2C onboardi
 requires-python = ">=3.10"
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "config.settings.test"
+DJANGO_SETTINGS_MODULE = "eduai_backend.settings.test"
 python_files = ["test_*.py", "*_test.py"]
 testpaths = ["apps", "tests"]
 addopts = "--strict-markers"
@@ -22,7 +22,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"config/settings/*.py" = ["F403", "F405"]  # deliberate star-import layering
+"eduai_backend/settings/*.py" = ["F403", "F405"]  # deliberate star-import layering
 # DJ001 ("avoid null=True on text fields") assumes Django owns the schema.
 # These models are unmanaged mirrors of tables created by supabase/migrations:
 # a nullable text column must be mapped as nullable or the model lies about
@@ -35,4 +35,4 @@ ignore = [
 "conftest.py" = ["S105", "S106"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["apps", "config"]
+known-first-party = ["apps", "eduai_backend"]

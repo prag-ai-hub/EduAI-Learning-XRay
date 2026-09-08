@@ -55,8 +55,8 @@ and `make dev-backend` do the same things.
 ## Conventions
 
 **Settings are selected explicitly.** There is no "default" environment that
-quietly works in production. `manage.py` defaults to `config.settings.dev`;
-`wsgi.py` and `asgi.py` default to `config.settings.prod`.
+quietly works in production. `manage.py` defaults to `eduai_backend.settings.dev`;
+`wsgi.py` and `asgi.py` default to `eduai_backend.settings.prod`.
 
 **No secret has a working default.** `base.py` reads every credential through
 `django-environ` with no fallback, so a missing value fails at boot rather than
@@ -102,7 +102,7 @@ payment payload; both can carry student PII.
 ```bash
 python -m pytest              # or: make test-backend
 ruff check . && ruff format --check .
-DJANGO_SETTINGS_MODULE=config.settings.prod python manage.py check --deploy
+DJANGO_SETTINGS_MODULE=eduai_backend.settings.prod python manage.py check --deploy
 ```
 
 The suite runs on a fresh clone with no `.env` — `config/settings/test.py`

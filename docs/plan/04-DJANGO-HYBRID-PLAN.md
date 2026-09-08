@@ -131,6 +131,50 @@ Three ways forward, in the order I would suggest them:
 3. **Leave it.** Only acceptable if approval is meant as a formality rather than
    a control — in which case the matrix's status gating should say so.
 
+## 4b. The single-app decision, and what it costs
+
+Decided 2026-09-04: the Next.js app and the Expo app become **one Expo codebase** in `app/`,
+serving web through `react-native-web` and phones natively. `npx expo start --web` runs it;
+`npx expo export` builds it. `frontend/` is deleted once its screens are ported.
+
+The part that turned out easy: all 20 server routes moved to expo-router `+api.ts` files
+almost verbatim, because they were written against the Web Fetch `Request`/`Response` API
+rather than anything Next-specific, and both dynamic routes read their parameter from the
+URL rather than from a router-supplied `params`. Verified by `expo export`: 20 of 20
+compiled into the server bundle.
+
+The part that is real work: 161 components, of which 57 are pure logic that ports unchanged
+and 27 are hard. An adversarial review of the porting plan found 22 blocking or major
+problems before a line was written. The largest:
+
+**29 call sites use relative URLs.** `authFetch("/api/...")` x21 and bare `fetch("/api/...")`
+x8. These work on Expo web and resolve to nothing on a phone, so the app would have looked
+correct in a browser and been entirely broken on a device. Now centralised in
+`app/src/shared/api/net.ts`.
+
+Three storage tiers were about to be collapsed into one: the access token (secret, small),
+the offline workspace cache (~4 MB, which SecureStore's ~2 KB limit cannot hold), and the
+theme preference. Split across the keychain and async storage in `app/src/shared/storage/index.ts`.
+
+### PDF generation moves to Django
+
+Four of the eight genuinely web-only features are the same thing: report PDFs, built with
+`html2canvas` rasterising the DOM, `jsPDF` composing the corrected answer sheet, `pdf.js`
+rendering page previews, and a print stylesheet. None of that exists on native.
+
+**Decision: generate them server-side in Django.** A phone and a browser then produce the
+identical document, which neither `expo-print` nor a web-only fallback can promise. Day 17
+already plans server-side GST invoice PDFs, so the rendering plumbing gets built once and
+serves both.
+
+Outstanding for that: choosing the renderer. WeasyPrint gives good CSS support with no
+browser dependency; a headless-browser renderer matches the current output most closely but
+adds a heavy runtime to the image. That choice is not yet made.
+
+The other four web-only items - `<a download>`, drag-and-drop, `window.open` previews and
+the IndexedDB blob store - have direct Expo equivalents (`expo-sharing`, a Platform-branched
+dropzone, `expo-file-system`) and are being built now.
+
 ## 5. Day-by-day
 
 Status: ▢ not started · ◐ partly covered by existing work · ✔ done
@@ -165,9 +209,9 @@ Status: ▢ not started · ◐ partly covered by existing work · ✔ done
 | 7.1 | Cross-school directory API (list / filter / search) | 3.0 | ✔ **Done.** Whitelisted filter/search/ordering, per-school staff and student counts, wired into the console |
 | 7.2 | Security headers & CORS hardening | 2.5 | ✔ **Done.** CORS narrowed to /api/, CSP and no-store on API responses, and deploy checks that refuse a wildcard config |
 | 7.3 | Registration / suspension notification emails | 3.0 | ✔ **Done.** Five templates, sent after commit, best-effort so a decision is never undone by SMTP |
-| 8.1 | Secrets audit: `.env.example` + `.gitignore` review | 2.0 | ◐ both rewritten for the split; audit not run |
-| 8.2 | Input validation & serializer-level sanitization | 3.0 | ▢ |
-| 8.3 | Audit logging for admin actions | 3.5 | ◐ write side done — every school transition and cross-tenant read is recorded; the read/reporting surface is not built |
+| 8.1 | Secrets audit: `.env.example` + `.gitignore` review | 2.0 | ✔ **Done 2026-09-07.** Automated instead of read once, so Day 19 re-runs it: 66 checks over the working tree (432 files, not just the 249 in the index) and all reachable history. Closed four `.gitignore` gaps. The Google pair still needs rotating - only the account owner can do that |
+| 8.2 | Input validation & serializer-level sanitization | 3.0 | ✔ **Done 2026-09-07.** `apps/common/validators.py`: NFC, invisibles, bidi overrides, NUL, JSON depth/width. Runs on every string by default; `RAW_FIELDS` exempts prompt text, base64 blobs and `response_format`, which sanitising would reject rather than clean |
+| 8.3 | Audit logging for admin actions | 3.5 | ✔ **Done 2026-09-07.** Read surface at `/api/v1/audit/events/`: capability-gated, tenant-scoped, whitelisted filters, newest-first. `detail_json` is whitelisted per action because the older surface writes full evaluation snapshots to the same table |
 | 9.1 | School Admin subscription/plan status API | 2.5 | ▢ |
 | 9.2 | QA: RBAC + JWT auth across all 4 roles | 4.0 | ▢ |
 | 9.3 | **PII hotfix in `grade/route.ts`** | 2.0 | ✔ **Done 2026-09-03**, via the AI proxy: the name is replaced before the request leaves and mapped back on the response; a failed scrub refuses to send |
@@ -281,7 +325,7 @@ downward, so `apps/accounts/capabilities.py` transcribes the matrix directly and
 the rank helpers were deleted so they cannot be reached for again. Permission is
 deny-by-default: a view that declares no capability is refused, not served.
 
-**A SuperAdmin has no implicit cross-tenant access.** `apps/common/tenancy.py`
+**A SuperAdmin has no implicit cross-tenant access.** `apps/tenants/schools/tenancy.py`
 mirrors the frontend: same checks, same order, same messages. Reaching another
 school needs an unexpired, unrevoked `support_access_grants` row belonging to
 that specific admin, and the read writes an `audit_events` row recording the

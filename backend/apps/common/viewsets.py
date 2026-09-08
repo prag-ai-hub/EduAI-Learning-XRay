@@ -4,7 +4,7 @@ Three things every endpoint in this service needs, bound together so none can
 be forgotten independently:
 
   * a declared capability (apps/accounts/permissions.py) - what kind of thing,
-  * tenant scoping (apps/common/tenancy.py)             - which rows,
+  * tenant scoping (apps/tenants/schools/tenancy.py)             - which rows,
   * a throttle scope (settings.REST_FRAMEWORK)          - how often.
 
 Inherit `TenantScopedViewSet` for anything holding school data and
@@ -17,8 +17,7 @@ from __future__ import annotations
 from rest_framework import viewsets
 
 from apps.accounts.permissions import HasCapability
-
-from .tenancy import SuperAdminScope, TenantScopedQuerySetMixin
+from apps.tenants.schools.tenancy import SuperAdminScope, TenantScopedQuerySetMixin
 
 
 class _Base(viewsets.GenericViewSet):

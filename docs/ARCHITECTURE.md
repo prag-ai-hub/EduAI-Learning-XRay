@@ -133,7 +133,7 @@ is how "SuperAdmin" turns into "can read every school's student data".
 | --- | --- | --- |
 | Who is calling? | `backend/apps/accounts/authentication.py` | Token verified, then role/school/status read from `public.users`. The token proves identity, never authority. |
 | May that role do this kind of thing? | `backend/apps/accounts/capabilities.py` | A transcription of `docs/plan/01-ROLE-PERMISSION-MATRIX.md` §2. |
-| On which rows? | `backend/apps/common/tenancy.py` | School scope, support grants, parent links. |
+| On which rows? | `backend/apps/tenants/schools/tenancy.py` | School scope, support grants, parent links. |
 
 **It is a capability matrix, not a rank ladder.** A SchoolAdmin outranks a
 Teacher administratively and still cannot grade — the matrix says teacher

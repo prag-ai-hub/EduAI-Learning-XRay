@@ -11,20 +11,39 @@ sit where they do.
 
 ```
 .
-├── frontend/     Next.js app on Cloudflare Workers  — the existing product surface
-├── backend/      Django REST API on its own Python host — all new functionality
+├── app/          Expo app — web, iOS and Android from one codebase
+├── backend/      Django REST API on its own Python host — serves every client
+├── frontend/     Next.js web app — RETIRING, replaced by app/
 ├── supabase/     Shared Postgres schema: SQL migrations + local stack config
-├── scripts/      Database and release scripts that belong to neither service
+├── scripts/      Database and release scripts that belong to no single service
 ├── docs/         Analysis, architecture, and the day-by-day delivery plan
-└── Makefile      Every task, for both workspaces, from the repo root
+└── Makefile      Every task, for every workspace, from the repo root
 ```
 
-Two rules keep the split honest:
+Start with [CLAUDE.md](CLAUDE.md) for the working rules and
+[PROJECT_ARCHITECTURE_GUIDE.md](PROJECT_ARCHITECTURE_GUIDE.md) for the
+folder-by-folder map.
 
-1. **Neither service reaches into the other's directory.** They talk over HTTP.
+Three rules keep the split honest:
+
+1. **No client reaches into another's directory.** They talk to `backend/` over
+   HTTP. Code both clients need lives in `app/src/shared/`.
 2. **Only `supabase/migrations` changes the application schema.** Django gets
    its own Postgres schema for its own bookkeeping and never migrates a table
    the SQL migrations own.
+3. **`app/src/shared/` has no platform-specific APIs and never imports a
+   feature.** It is bundled by a Cloudflare Worker, a browser and Metro;
+   anything that works in only one of those belongs in a feature slice.
+
+`frontend/` is being folded into `app/` and will be deleted. Its 20 server API
+routes are already ported — Expo Router serves them as `+api.ts` files, and they
+moved almost verbatim because they were written against the Web Fetch
+`Request`/`Response` API rather than anything Next-specific. What remains is the
+UI, which has to become React Native components so the same screens render on
+web and on a phone.
+
+Until that finishes, `frontend/` stays runnable and imports its API client from
+`app/src/shared/api` rather than keeping a copy.
 
 ## Prerequisites
 
@@ -46,6 +65,8 @@ make db-bootstrap     # create the `django` schema, once per database
 
 make dev-frontend     # http://localhost:3000
 make dev-backend      # http://localhost:8000
+make dev-web          # Expo on the web (npx expo start --web)
+make dev-app          # Expo dev server; scan the QR with Expo Go
 ```
 
 Run `make help` for the full target list.

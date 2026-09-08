@@ -1,10 +1,16 @@
-# Deploying the Django service
+# Deployment
+
+Two deployables: the Django service, and the Expo app. This page covers the
+Django service first, then `app/`.
+
+## The Django service
 
 Cloudflare Workers cannot run Django, so this service needs a Python host of
 its own. Everything here has been exercised against a real container reaching a
 real Postgres — it is a checklist, not a sketch.
 
-The frontend keeps deploying to Cloudflare exactly as it does today.
+`frontend/` keeps deploying to Cloudflare exactly as it does today, until
+`app/` replaces it.
 
 ## Build and run
 
@@ -50,7 +56,7 @@ Everything in `backend/.env.example`, with these mattering most in production:
 Run the checks before shipping — they are errors, not warnings:
 
 ```bash
-DJANGO_SETTINGS_MODULE=config.settings.prod python manage.py check --deploy
+DJANGO_SETTINGS_MODULE=eduai_backend.settings.prod python manage.py check --deploy
 ```
 
 ## Health
@@ -82,3 +88,69 @@ in the separate `django` schema.
   ECS, a VM with Docker. It is not provisioned yet.
 - A staging environment with its own database and its own `.env`.
 - `REDIS_URL` needs a real instance for throttling to mean anything.
+
+---
+
+# Deploying app/
+
+One codebase, three targets: a web bundle with server routes, and native iOS and
+Android builds. Configuration lives in `app/eas.json`, validated by
+`npx eas-cli config` — an invalid profile is rejected there, not at build time.
+
+## What you must do yourself, once
+
+`eas.json` is written, but an EAS **project** belongs to an account and cannot be
+created from here:
+
+```bash
+cd app && npx eas-cli login && npx eas-cli init
+```
+
+That writes `extra.eas.projectId` into `app/app.json` and sets `owner`. Until it
+is run, every `eas` command stops with "EAS project not configured".
+
+## Environment
+
+`app/.env.example` has two halves and the split is load-bearing:
+
+| Half | Reaches | Rule |
+| --- | --- | --- |
+| `EXPO_PUBLIC_*` | compiled into the bundle | never a secret — anyone with the APK reads it |
+| everything else | the server runtime only | the twenty routes under `src/app/api/` |
+
+Expo loads `.env` from the **project directory**, so it is `app/.env`, not the
+repo-root one. `backend/tests/test_secrets_audit.py` fails the build if a
+server-side name gains an `EXPO_PUBLIC_` prefix.
+
+`SHARE_TOKEN_SECRET` must be set. It signs parent share links and no longer
+falls back to the Supabase service-role key — that fallback put link-signing and
+full database access behind one value.
+
+## Web
+
+```bash
+cd app && npx expo export --platform web
+```
+
+`app.json` sets `"web": {"output": "server"}`, so the export is **not** a static
+site: it produces a server bundle because `+api.ts` routes have to run
+somewhere. Any Node host works; the server-side variables above must be present
+in its environment.
+
+## Native
+
+```bash
+cd app
+npx eas-cli build --profile preview    --platform android   # internal APK
+npx eas-cli build --profile production --platform all       # store builds
+```
+
+`production` uses `appVersionSource: "remote"` with `autoIncrement`, so EAS owns
+the build number and two machines cannot mint the same one.
+
+## Still outstanding for app/
+
+- `eas init` under the owner's account — nothing below it can run first.
+- No host chosen for the web server bundle.
+- Store credentials (Apple team, Play service account) for `eas submit`.
+- The product UI is still in `frontend/`; a build today ships the shell.
