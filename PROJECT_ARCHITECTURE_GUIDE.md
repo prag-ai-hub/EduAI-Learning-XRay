@@ -23,7 +23,8 @@ EduAI-Learning-X-Ray/
 ├── backend/                    Django REST API — the server
 ├── app/                        Expo client — web + iOS + Android
 ├── frontend/                   Next.js web app — RETIRING, do not extend
-├── supabase/                   Shared Postgres schema: SQL migrations + local stack
+├── supabase/                   Shared Postgres schema: SQL migrations, local stack
+│                               config, and the Supabase CLI that applies them
 ├── docs/                       Architecture, deployment, testing, the delivery plan
 ├── scripts/                    Repo-level database and release scripts
 │

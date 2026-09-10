@@ -160,3 +160,42 @@ def cache_backend_is_importable(app_configs, **kwargs):
                 )
             )
     return errors
+
+
+@register(deploy=True)
+def throttle_cache_is_shared(app_configs, **kwargs):
+    """A per-process throttle counter is not a rate limit.
+
+    DRF keeps throttle state in the default cache. LocMemCache is per PROCESS,
+    so under N gunicorn workers every limit is silently N times looser and each
+    counter resets when its worker recycles. `settings/prod.py` falls back to
+    LocMemCache whenever REDIS_URL is empty, which is exactly the configuration
+    an operator ends up with by not setting one.
+
+    That matters most where a throttle is the only control there is.
+    `/api/v1/parents/links/redeem` takes a ten-character invite code and grants a
+    parent access to a named child's reports; nothing else stands between a
+    guessing attacker and that link, so a limit of 10/hour that is really
+    10/hour/worker and forgets itself on restart is the difference between the
+    endpoint being defended and appearing to be.
+
+    eduai.E007 asks whether the cache backend can be imported at all. This asks
+    whether it is shared, which is a different question with the same symptom -
+    everything works, quietly and wrongly.
+    """
+    backend = (settings.CACHES or {}).get("default", {}).get("BACKEND", "")
+    if not backend.endswith("locmem.LocMemCache"):
+        return []
+    return [
+        Error(
+            "The default cache is LocMemCache, which is per-process, so every "
+            "throttle is per-worker rather than per-deployment.",
+            hint=(
+                "Set REDIS_URL to a shared cache. The invite-code redemption "
+                "limit is the only brute-force control on parent-child linking; "
+                "per-worker it is as loose as the worker count and resets on "
+                "every restart."
+            ),
+            id="eduai.E008",
+        )
+    ]

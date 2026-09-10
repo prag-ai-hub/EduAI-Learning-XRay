@@ -68,7 +68,7 @@ from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.db import connection, transaction
-from django.db.models import F
+from django.db.models import F, Q
 from django.utils import timezone
 from rest_framework.exceptions import APIException, ValidationError
 
@@ -437,7 +437,7 @@ def _checkout(
 
         now = timezone.now()
         tax = tax_paise(plan.amount_paise, rate_bps)
-        key = _idempotency_key(purpose, payer, plan, idempotency_key)
+        key = _stored_key(purpose, payer, plan, idempotency_key)
 
         payment = Payment.objects.create(
             id=uuid.uuid4(),
@@ -527,9 +527,16 @@ def _existing_checkout(payer: dict, plan: Plan, purpose: str, client_key: str | 
     double-clicked button - browsers do not send idempotency keys by themselves.
     """
     if client_key:
-        return Payment.objects.filter(
-            idempotency_key=_idempotency_key(purpose, payer, plan, client_key)
-        ).first()
+        # The newest attempt under this logical key, and only if it is still
+        # worth returning. A FAILED payment took no money and produced nothing,
+        # so handing it back forever would leave the payer unable to buy this
+        # plan again with the key their client generated - a wedge that only
+        # ends when they clear their storage. M15 set the precedent: a terminal
+        # outcome releases the key rather than sealing it.
+        latest = _attempts(purpose, payer, plan, client_key).order_by("-created_at").first()
+        if latest is not None and latest.status == Payment.Status.FAILED:
+            return None
+        return latest
 
     return (
         Payment.objects.filter(
@@ -541,6 +548,35 @@ def _existing_checkout(payer: dict, plan: Plan, purpose: str, client_key: str | 
         )
         .order_by("-created_at")
         .first()
+    )
+
+
+def _stored_key(purpose: str, payer: dict, plan: Plan, client_key: str | None) -> str:
+    """The value actually written to `payments.idempotency_key`, which is unique.
+
+    Without a client key the nonce is random and collides with nothing. With
+    one, a retry after a failed attempt has to differ from the row that failed,
+    so it takes the next `#n`. The logical key stays the caller's, which is what
+    `_attempts` matches on.
+    """
+    logical = _idempotency_key(purpose, payer, plan, client_key)
+    if not client_key:
+        return logical
+    taken = _attempts(purpose, payer, plan, client_key).count()
+    return logical if taken == 0 else f"{logical}#{taken + 1}"
+
+
+def _attempts(purpose: str, payer: dict, plan: Plan, client_key: str):
+    """Every payment written under one client-supplied key.
+
+    A retry after a failure cannot reuse the stored key - `idempotency_key` is
+    unique - so attempts after the first carry a `#n` suffix. Matching is the
+    exact key or the key plus that separator, never a bare prefix: `...:abc`
+    must not match a different caller's `...:abcd`.
+    """
+    logical = _idempotency_key(purpose, payer, plan, client_key)
+    return Payment.objects.filter(
+        Q(idempotency_key=logical) | Q(idempotency_key__startswith=f"{logical}#")
     )
 
 

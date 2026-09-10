@@ -1,0 +1,15 @@
+{
+  "name": "eduai-supabase",
+  "private": true,
+  "description": "The Supabase CLI, kept beside the schema it manages. Not a client workspace: it depends on neither app/ nor frontend/, so deleting the retiring web app does not take the migration tooling with it.",
+  "scripts": {
+    "start": "supabase start",
+    "stop": "supabase stop",
+    "status": "supabase status",
+    "reset": "supabase db reset",
+    "push": "supabase db push"
+  },
+  "devDependencies": {
+    "supabase": "^2.116.0"
+  }
+}

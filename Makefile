@@ -13,16 +13,20 @@ BACKEND  := backend
 PY       := $(BACKEND)/.venv/bin/python
 PIP      := $(BACKEND)/.venv/bin/pip
 
-# The Supabase CLI ships as a devDependency of the frontend workspace, but the
-# schema it manages (supabase/) is shared and lives at the repo root - so the
-# binary is invoked by path, with the repo root as the working directory.
-SUPABASE := $(FRONTEND)/node_modules/.bin/supabase
+# The Supabase CLI lives beside the schema it manages, in supabase/package.json,
+# and not in either client workspace. It used to be a devDependency of
+# frontend/, which meant `make db-push` and `make db-reset` would have stopped
+# working the day that directory was deleted - the schema tooling was hostage to
+# the retiring web app. The binary is still invoked by path because the CLI
+# expects the repo root as its working directory: config.toml and migrations/
+# are looked up at ./supabase/.
+SUPABASE := supabase/node_modules/.bin/supabase
 
 .PHONY: help install install-frontend install-app install-backend \
         dev-frontend dev-app dev-web build-app dev-backend test test-frontend test-backend \
         lint lint-frontend lint-app lint-backend \
         check db-start db-stop db-status db-push db-reset db-test db-bootstrap \
-        migrate clean
+        migrate clean db-push-dry
 
 help: ## Show this help
 	@echo "EduAI Learning X-Ray - available targets:"
@@ -104,8 +108,16 @@ db-stop: ## Stop the local Supabase stack
 db-status: ## Print local stack URLs and keys
 	$(SUPABASE) status
 
-db-push: ## Apply supabase/migrations to the linked project
-	$(SUPABASE) db push
+# SUPABASE_DB_URL names the hosted project and lives in backend/.env, beside
+# every other credential. Read here rather than exported globally, and only this
+# target reads it - the DB_* block Django uses stays pointed at the local stack,
+# because pointing it at production would break local development and
+# conftest.py refuses to test against a non-local host anyway.
+db-push: ## Apply supabase/migrations to the hosted project (SUPABASE_DB_URL in backend/.env)
+	@set -a; 	  [ -f $(BACKEND)/.env ] && . <(grep -E '^SUPABASE_DB_URL=' $(BACKEND)/.env) || true; 	  set +a; 	  if [ -z "$$SUPABASE_DB_URL" ]; then 	    echo "SUPABASE_DB_URL is not set in $(BACKEND)/.env - see .env.example."; exit 1; 	  fi; 	  $(SUPABASE) db push --db-url "$$SUPABASE_DB_URL"
+
+db-push-dry: ## Show what db-push would apply, without applying it
+	@set -a; 	  [ -f $(BACKEND)/.env ] && . <(grep -E '^SUPABASE_DB_URL=' $(BACKEND)/.env) || true; 	  set +a; 	  $(SUPABASE) db push --db-url "$$SUPABASE_DB_URL" --dry-run
 
 db-reset: ## Rebuild the local database from supabase/migrations
 	$(SUPABASE) db reset

@@ -147,3 +147,48 @@ porting agents at once.
 * `form.tsx` wrote to refs during render in four places. React Compiler is on,
   so it may skip a render and take the assignment with it. Now refreshed in a
   layout effect.
+
+## Carried into wave 3 (from the waves 0-2 review)
+
+Everything the reviewer raised was fixed in place except these, which are not
+defects in waves 0-2 but obligations on the waves that consume them.
+
+* **`gapSeverity`, not `masteryTone`, on a gap card.** `masteryTone` has three
+  bands because a report does; the diagnostic gap list has two and never says
+  "secure" - a closed gap is not listed. `analytics.gapSeverity` is the
+  two-way form. Using the wrong one captions an 85%-mastery gap
+  "secure learning gap".
+* **`useThemePreference` has to be wired by the shell.** The hook now exists
+  (`@/shared/hooks/use-theme-preference`) and owns `StorageKeys.theme`, but
+  nothing renders a toggle yet. `IconButton` is already there for the sun/moon
+  control; wave 6's shell is where `choice`/`setChoice` land. React Native has
+  no `data-theme`, so the resolved value has to reach `useAppStyles` rather
+  than being written onto a root element.
+* **`PageHead` cannot reproduce the mobile FAB.** The web floats the PRIMARY
+  button only, below 760px, out of the `.button-row` and into a fixed corner
+  (`right:15px; bottom:78px`). There is no RN equivalent of `position:fixed`
+  inside a row - it has to be an absolutely positioned sibling of the page
+  ScrollView. Two of the fifteen `PageHead` sites carry a secondary button
+  alongside; those stay in the row.
+* **`signOut` does not navigate.** The web did `location.replace("/signin")`.
+  `useSession().signOut` clears the session and stops; the caller routes.
+  `LegalPage` takes `onBack`/`onAction` callbacks for the same reason.
+* **`OAuthButtonRow`'s `login` variant takes `onEmail`** because `form.tsx` has
+  no `focusField`. The web focused the email input directly
+  (`frontend/app/signin/page.tsx:126`). Either `form.tsx` gains `focusField`,
+  or the screen holds its own ref.
+* **`PickedDocument` and `PickedFile` are two structurally identical types** in
+  two modules, kept apart so `shared/` does not import `features/`. A caller
+  holding both should convert explicitly rather than assume they are assignable.
+
+## Deleting `frontend/`: one blocker down
+
+The Supabase CLI used to be a devDependency of `frontend/`, so every `make db-*`
+target would have broken the day that directory went. It now lives in
+`supabase/package.json`, beside the migrations it applies, depending on neither
+client workspace.
+
+What still has to move first: the 12 contract suites in `frontend/tests/`. Only
+three of them guard frontend UI (`auth-ux`, `read-model`, `school-onboarding`);
+the other nine - 129 of the 182 tests - guard `supabase/migrations`, `backend/`
+or are pure logic, and have to survive.

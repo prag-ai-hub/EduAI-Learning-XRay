@@ -43,6 +43,10 @@ psycopg[binary]~=3.2.0
 # --- Authentication ----------------------------------------------------------
 # Verifies the Supabase-issued JWT: signature, expiry, audience.
 PyJWT~=2.10.0
+# PyJWT needs this for the asymmetric algorithms. Supabase issues ES256 once a
+# project has signing keys, and without cryptography installed every one of
+# those tokens fails verification - which is every request, not a subset.
+cryptography~=44.0.0
 
 # --- Serving -----------------------------------------------------------------
 # WSGI server for the dedicated Python host. Cloudflare Workers cannot run
@@ -58,6 +62,13 @@ whitenoise~=6.8.0
 # tests/test_requirements.py cannot see it - it is declared here by hand, and
 # eduai.E007 is what actually proves the backend can be loaded.
 redis~=5.2.0
+
+# --- Documents ---------------------------------------------------------------
+# GST invoice PDFs. Pure Python with no system libraries, which keeps the image
+# the same shape as psycopg[binary] does; BSD, unlike fpdf2's LGPL, which
+# matters for a commercial product. An invoice is a fixed table and Table is
+# what platypus is for.
+reportlab~=5.0.0
 
 # --- Testing and linting -----------------------------------------------------
 pytest~=8.3.0

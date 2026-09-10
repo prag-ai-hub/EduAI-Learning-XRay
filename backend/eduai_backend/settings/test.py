@@ -36,6 +36,11 @@ EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 # themselves are tested explicitly in apps/common/tests.
 REST_FRAMEWORK = {  # noqa: F405
     **REST_FRAMEWORK,  # noqa: F405
+    # One exception, and it is deliberate: `parent_link` is a ScopedRateThrottle
+    # with its own FALLBACK_RATE inside RedemptionThrottle, so clearing the
+    # rates here does NOT switch it off - the three brute-force tests depend on
+    # it staying live. A future test that posts to /links/redeem more than ten
+    # times for one account will get an unexplained 429; that is why.
     "DEFAULT_THROTTLE_CLASSES": [],
     "DEFAULT_THROTTLE_RATES": {},
 }

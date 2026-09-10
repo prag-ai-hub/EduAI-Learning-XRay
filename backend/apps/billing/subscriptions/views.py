@@ -20,6 +20,10 @@ below leaves a payment in `created` and stops.
 
 from __future__ import annotations
 
+import re
+
+from django.http import HttpResponse
+from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -29,18 +33,25 @@ from apps.accounts.permissions import requires
 from apps.accounts.roles import PARENT, SCHOOL_ADMIN
 from apps.common.pagination import DefaultPagination
 from apps.common.viewsets import ReadOnlyPlatformViewSet, ReadOnlyTenantScopedViewSet
+from apps.platform.audit.services import record
 from apps.tenants.schools.tenancy import SuperAdminScope, require_school_scope
 
-from . import entitlements, gateway, services
-from .models import Payment, Plan
+from . import entitlements, gateway, pdf, services
+from .invoices import InvoiceAction
+from .models import Invoice, Payment, Plan
 from .serializers import (
     EntitlementSerializer,
+    InvoiceSerializer,
     PaymentSerializer,
     PlanSerializer,
+    ReceiptSerializer,
     SubscriptionCheckoutSerializer,
     SubscriptionSerializer,
     TopupCheckoutSerializer,
 )
+
+#: An invoice number contains slashes. A filename must not.
+FILENAME_UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 class PlanViewSet(ReadOnlyPlatformViewSet):
@@ -80,17 +91,64 @@ class PlanViewSet(ReadOnlyPlatformViewSet):
         return queryset  # SuperAdmin: the whole catalogue, to support both sides
 
 
-class PaymentHistoryViewSet(ReadOnlyTenantScopedViewSet):
+class _PayerScopedViewSet(ReadOnlyTenantScopedViewSet):
+    """Billing rows the caller may see, for tables that carry their own payer.
+
+    Three surfaces share this - payments, receipts and invoices - and the
+    scoping is NOT uniform across roles, which is exactly why it is written
+    once here rather than three times:
+
+      * **A parent** is reached through the payer column on the row itself. The
+        mixin would reach them through `parent_student_links`, because
+        everything else a parent may see belongs to a child; a payment belongs
+        to the parent directly and has no student on it. Left to the mixin,
+        `parent_link_field` being unset would correctly return nothing -
+        correct, and useless.
+      * **A SuperAdmin** must NAME the school. `require_school_scope` is what
+        checks the support grant and writes the audit row, so routing through
+        it is what makes this read leave a trace at all - the tenancy mixin
+        filters silently. An earlier version of the payments endpoint cited the
+        matrix's "✔ all" row and read every tenant's billing data ungated and
+        unaudited; that was the only cross-tenant read in this service that
+        left nothing behind.
+      * **Everyone else** is their own school, via the mixin.
+
+    GRANTED, not ALL. The matrix has two rows that look like they answer this
+    and only one of them does: "View own payment history" is ✔ all for a
+    SuperAdmin (§Payments), but reading somebody else's school is "View school
+    payment history & invoices", which is ◐.
+    """
+
+    tenant_field = "school_id"
+    super_admin_scope = SuperAdminScope.GRANTED
+
+    #: The payer column for a parent. Same name on `payments` and `invoices`.
+    parent_field = "parent_user_id"
+    ordering: tuple[str, ...] = ("-created_at",)
+    #: What a SuperAdmin is told when they name no school.
+    scope_prompt = "Name the school whose billing records you are reading."
+
+    def get_queryset(self):
+        principal = self.request.user
+        if getattr(principal, "is_parent", False):
+            return self._rows().filter(**{self.parent_field: principal.id})
+        if getattr(principal, "is_super_admin", False):
+            requested = (self.request.query_params.get("school") or "").strip()
+            if not requested:
+                raise ValidationError({"school": self.scope_prompt})
+            require_school_scope(principal, requested)
+            return self._rows().filter(school_id=requested)
+        return super().get_queryset().order_by(*self.ordering)
+
+    def _rows(self):
+        return self.queryset.order_by(*self.ordering)
+
+
+class PaymentHistoryViewSet(_PayerScopedViewSet):
     """GET /api/v1/billing/payments/ - what this payer has been charged.
 
     Read-only, and there is no write path at all. A payment's status is the
     gateway's to decide.
-
-    The parent branch is written out rather than left to `TenantScopedQuerySetMixin`.
-    The mixin reaches a parent's rows through `parent_student_links`, because
-    everything else a parent may see belongs to a child; a payment belongs to the
-    parent directly and has no student on it. Left to the mixin, `parent_link_field`
-    being unset would correctly return nothing - correct, and useless.
     """
 
     queryset = Payment.objects.select_related("plan").all()
@@ -98,23 +156,81 @@ class PaymentHistoryViewSet(ReadOnlyTenantScopedViewSet):
     pagination_class = DefaultPagination
     required_capabilities = frozenset({Capability.PAYMENT_HISTORY_READ})
     throttle_scope = "user"
+    scope_prompt = "Name the school whose payments you are reading."
 
-    tenant_field = "school_id"
-    # Matrix: SuperAdmin is "✔ all" for payment history, unlike the school
-    # administration rows beside it. Defensible only because `PaymentSerializer`
-    # returns no billing name, address or GSTIN - the identifiable part of a
-    # payment stays in `notes`, which the serializer does not expose.
-    super_admin_scope = SuperAdminScope.ALL
 
-    def get_queryset(self):
-        principal = self.request.user
-        if getattr(principal, "is_parent", False):
-            return (
-                Payment.objects.select_related("plan")
-                .filter(parent_user_id=principal.id)
-                .order_by("-created_at")
-            )
-        return super().get_queryset().order_by("-created_at")
+class ReceiptViewSet(_PayerScopedViewSet):
+    """GET /api/v1/billing/receipts/ - proof that money was taken (day 17.1).
+
+    Payment history narrowed to what actually settled, with the invoice number
+    joined on. Not a rename of `payments/`: that endpoint answers "what has been
+    attempted on this account", including the orders that failed and the ones
+    still open, and a customer looking for a receipt should not have to sift
+    them. A `created` order is not a receipt of anything.
+    """
+
+    queryset = (
+        Payment.objects.filter(status__in=Payment.SETTLED_STATUSES)
+        .select_related("plan")
+        .prefetch_related("invoices")
+        .all()
+    )
+    serializer_class = ReceiptSerializer
+    pagination_class = DefaultPagination
+    required_capabilities = frozenset({Capability.PAYMENT_HISTORY_READ})
+    throttle_scope = "user"
+    ordering = ("-captured_at", "-created_at")
+    scope_prompt = "Name the school whose receipts you are reading."
+
+
+class InvoiceViewSet(_PayerScopedViewSet):
+    """GET /api/v1/billing/invoices/ and .../<id>/pdf - GST invoices (day 17.2).
+
+    Two capabilities, and they are genuinely different questions. Listing is
+    `payment.history.read`; taking away the document is
+    `payment.invoice.download`, which is the matrix's own separate cell. Every
+    role that holds one currently holds the other, and declaring them
+    separately anyway is what makes it possible to withdraw one later without
+    finding out that the code never distinguished them.
+
+    Ordered by invoice date rather than creation: a document is filed by the
+    date printed on it.
+    """
+
+    queryset = Invoice.objects.select_related("payment", "payment__plan", "credit_note_for").all()
+    serializer_class = InvoiceSerializer
+    pagination_class = DefaultPagination
+    required_capabilities = frozenset({Capability.PAYMENT_HISTORY_READ})
+    capability_map = {"pdf": Capability.PAYMENT_INVOICE_DOWNLOAD}
+    throttle_scope = "user"
+    ordering = ("-invoice_date", "-created_at")
+    scope_prompt = "Name the school whose invoices you are reading."
+
+    @action(detail=True, methods=["get"], url_path="pdf")
+    def pdf(self, request, pk=None):
+        """The invoice as a PDF, rendered from the row on demand.
+
+        Nothing is stored - see `pdf.py` for why - so this is the only way to
+        obtain the document, and the download is audited. `get_object` runs the
+        scoping above first, so a cross-tenant download has already had its
+        support grant checked and its access recorded before a byte is drawn.
+        """
+        invoice = self.get_object()
+        body = pdf.render_invoice(invoice)
+
+        record(
+            action=InvoiceAction.DOWNLOADED,
+            school_id=invoice.school_id or services.PLATFORM_SCOPE,
+            actor_id=request.user.id,
+            entity_type="invoice",
+            entity_id=str(invoice.id),
+            detail={"invoiceNumber": invoice.invoice_number},
+        )
+
+        response = HttpResponse(body, content_type="application/pdf")
+        filename = FILENAME_UNSAFE.sub("-", invoice.invoice_number)
+        response["Content-Disposition"] = f'attachment; filename="{filename}.pdf"'
+        return response
 
 
 class SubscriptionView(APIView):
@@ -239,8 +355,10 @@ class TopupCheckoutView(_CheckoutView):
 
 
 __all__ = [
+    "InvoiceViewSet",
     "PaymentHistoryViewSet",
     "PlanViewSet",
+    "ReceiptViewSet",
     "SubscriptionCancelView",
     "SubscriptionCheckoutView",
     "SubscriptionView",

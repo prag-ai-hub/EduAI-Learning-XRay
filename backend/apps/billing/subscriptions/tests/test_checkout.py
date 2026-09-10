@@ -281,6 +281,56 @@ def test_a_client_supplied_idempotency_key_returns_the_first_answer(
 
 
 @override_settings(**BILLING_SETTINGS)
+def test_a_failed_payment_does_not_wedge_the_key_forever(
+    make_school, make_user, api_client_for, make_plan, fake_gateway
+):
+    """A key whose attempt failed must let the payer try again.
+
+    Returning the dead order instead would leave them unable to buy this plan
+    at all: the client generates one key per intent and re-sends it, so the
+    wedge only ends when their storage is cleared. A failed payment took no
+    money and produced nothing - there is no first answer worth handing back.
+    """
+    calls = fake_gateway()
+    plan = make_plan(audience="school")
+    client = api_client_for(make_user(SCHOOL_ADMIN, school=make_school()))
+    sent = body(plan, idempotency_key="attempt-that-fails")
+
+    first = client.post(B2B, sent, format="json").json()
+    Payment.objects.filter(pk=first["payment_id"]).update(status=Payment.Status.FAILED)
+
+    second = client.post(B2B, sent, format="json").json()
+
+    assert second["payment_id"] != first["payment_id"], "the failed order was handed back"
+    assert second["reused"] is False
+    assert len(calls) == 2, "a retry must reach the gateway"
+
+
+@override_settings(**BILLING_SETTINGS)
+def test_a_live_payment_under_a_reused_key_is_still_returned_not_recharged(
+    make_school, make_user, api_client_for, make_plan, fake_gateway
+):
+    """The other half: only a FAILED attempt releases the key.
+
+    A captured payment under the same key must still return the first answer -
+    otherwise the wedge fix would have turned an idempotency key into a second
+    charge, which is the failure worth being much more afraid of.
+    """
+    calls = fake_gateway()
+    plan = make_plan(audience="school")
+    client = api_client_for(make_user(SCHOOL_ADMIN, school=make_school()))
+    sent = body(plan, idempotency_key="attempt-that-captures")
+
+    first = client.post(B2B, sent, format="json").json()
+    Payment.objects.filter(pk=first["payment_id"]).update(status=Payment.Status.CAPTURED)
+
+    second = client.post(B2B, sent, format="json").json()
+
+    assert second["payment_id"] == first["payment_id"]
+    assert len(calls) == 1, "a captured payment must not be charged again"
+
+
+@override_settings(**BILLING_SETTINGS)
 def test_two_different_payers_do_not_share_an_idempotency_key(
     make_school, make_user, api_client_for, make_plan, fake_gateway
 ):

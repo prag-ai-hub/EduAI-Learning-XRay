@@ -12,6 +12,8 @@ from rest_framework.test import APIClient
 
 from apps.accounts.roles import PARENT, SCHOOL_ADMIN, SUPER_ADMIN, TEACHER
 from apps.billing.subscriptions.models import Subscription
+from apps.platform.audit.models import AuditEvent
+from apps.tenants.schools.tenancy import CROSS_TENANT_READ
 
 from .conftest import BILLING_SETTINGS
 
@@ -109,16 +111,53 @@ def test_a_teacher_cannot_read_payment_history(make_school, make_user, api_clien
     assert api_client_for(make_user(TEACHER, school=make_school())).get(PAYMENTS).status_code == 403
 
 
-def test_a_super_admin_sees_across_tenants(
+def test_a_super_admin_must_name_the_school(
     make_school, make_user, api_client_for, make_plan, make_payment
 ):
+    """Reading a school's payments is the matrix's ◐ row, not its ✔ all row.
+
+    "View own payment history" is ✔ all for a SuperAdmin; reading somebody
+    else's school is "View school payment history & invoices", which is ◐ and
+    sits beside "Subscribe / upgrade / cancel plan". Unnamed, the request is
+    refused rather than quietly answered with everything.
+    """
     plan = make_plan(audience="school")
     make_payment(plan=plan, school=make_school("One"))
     make_payment(plan=plan, school=make_school("Two"))
 
     response = api_client_for(make_user(SUPER_ADMIN)).get(PAYMENTS)
 
-    assert response.json()["count"] >= 2
+    assert response.status_code == 400
+    assert "school" in response.json().get("error", {}).get("detail", {})
+
+
+def test_a_super_admin_without_a_grant_reads_nothing(
+    make_school, make_user, api_client_for, make_plan, make_payment
+):
+    school = make_school("One")
+    make_payment(plan=make_plan(audience="school"), school=school)
+
+    response = api_client_for(make_user(SUPER_ADMIN)).get(PAYMENTS, {"school": school.id})
+
+    assert response.status_code == 403
+
+
+def test_a_granted_super_admin_reads_that_school_and_the_read_is_audited(
+    make_school, make_user, api_client_for, make_plan, make_payment, make_grant
+):
+    """The only cross-tenant read in this service that used to leave no trace."""
+    plan = make_plan(audience="school")
+    school = make_school("One")
+    theirs = make_payment(plan=plan, school=school)
+    make_payment(plan=plan, school=make_school("Two"))
+    reader = make_user(SUPER_ADMIN)
+    make_grant(granted_to=reader, school=school)
+
+    before = AuditEvent.objects.filter(action=CROSS_TENANT_READ).count()
+    response = api_client_for(reader).get(PAYMENTS, {"school": school.id})
+
+    assert [row["id"] for row in response.json()["results"]] == [str(theirs.id)]
+    assert AuditEvent.objects.filter(action=CROSS_TENANT_READ).count() == before + 1
 
 
 def test_the_history_never_returns_the_billing_snapshot(

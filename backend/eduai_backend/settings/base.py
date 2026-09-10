@@ -195,8 +195,27 @@ API_BASE_URL = env("API_BASE_URL", default="")
 FRONTEND_URL = env("FRONTEND_URL", default="")
 
 SUPABASE_URL = env("SUPABASE_URL")
-SUPABASE_JWT_SECRET = env("SUPABASE_JWT_SECRET")
+
+# Supabase signs access tokens two ways and a project can move between them.
+#
+#   HS256  the legacy shared secret below. One symmetric key, and anything that
+#          can verify a token can also mint one.
+#   ES256  the current default once a project has signing keys - asymmetric,
+#          with a `kid` naming a public key published at the JWKS URL. We can
+#          verify and cannot forge, which is the point.
+#
+# Both are accepted because which one arrives is the project's setting, not
+# ours, and a project that rotates to signing keys must not take the API down.
+# The algorithm is never taken from the token: the header only chooses WHICH
+# allowlisted verifier runs, so `alg: none`, or an RS256 token replayed as HS256
+# against the public key, cannot get through. See apps/accounts/authentication.
+SUPABASE_JWT_SECRET = env("SUPABASE_JWT_SECRET", default="")
 SUPABASE_JWT_ALGORITHMS = ["HS256"]
+SUPABASE_JWT_ASYMMETRIC_ALGORITHMS = ["ES256", "RS256", "EdDSA"]
+SUPABASE_JWKS_URL = env(
+    "SUPABASE_JWKS_URL",
+    default=f"{SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json" if SUPABASE_URL else "",
+)
 SUPABASE_JWT_AUDIENCE = env("SUPABASE_JWT_AUDIENCE", default="authenticated")
 
 # --------------------------------------------------------------------------

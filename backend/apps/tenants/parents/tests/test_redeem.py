@@ -247,12 +247,29 @@ def test_a_refusal_is_audited_with_the_reason_the_caller_was_not_told(
     assert event.detail_json["reason"] == "expired"
 
 
-def test_a_guess_that_matches_nothing_writes_no_audit_row(make_user, api_client_for):
-    # A row per guess would let an attacker fill audit_events, and there is no
-    # school to attribute it to. The throttle is the control for this case.
-    api_client_for(make_user(PARENT)).post(ENDPOINT, {"code": "ZZZZZZZZZZ"}, format="json")
+def test_a_guess_writes_no_audit_row_but_a_real_refusal_does(issued, make_user, api_client_for):
+    """The distinction, in one test, because the absence alone proves nothing.
 
+    A row per guess would let an attacker fill `audit_events`, and there is no
+    school to attribute it to - the throttle is the control for that case. But
+    asserting only that nothing was written passes just as well when the whole
+    endpoint is gone, or when the audit call is deleted outright. So both
+    branches run here: the guess writes nothing, the expired code that really
+    exists writes exactly one row, and it is the second assertion that keeps the
+    first honest.
+    """
+    client = api_client_for(make_user(PARENT))
+    school, student, expired = issued(expires_in=timedelta(days=-1))
+
+    client.post(ENDPOINT, {"code": "ZZZZZZZZZZ"}, format="json")
     assert not AuditEvent.objects.filter(action=ParentAction.LINK_REFUSED).exists()
+
+    client.post(ENDPOINT, {"code": expired.code}, format="json")
+
+    rows = list(AuditEvent.objects.filter(action=ParentAction.LINK_REFUSED))
+    assert len(rows) == 1, "a code that exists must be recorded, a guess must not"
+    assert rows[0].school_id == school.id
+    assert rows[0].detail_json["studentId"] == student.id
 
 
 # --- brute force ------------------------------------------------------------
@@ -293,3 +310,57 @@ def test_a_throttled_attempt_never_reaches_the_code(make_user, api_client_for, i
 
     assert refused.status_code == 429
     assert ParentInviteCode.objects.get(pk=invite.id).used_count == 0
+
+
+# ---------------------------------------------------------------------------
+# The self-signed-up parent (Day 12.2)
+#
+# The role matrix provisions a Parent as "Self sign-up + invite code", and those
+# are two calls: POST /api/v1/accounts/parents creates the profile, this
+# endpoint links the child. The pair is asserted here rather than beside the
+# sign-up endpoint because what matters is that a self-created account gets no
+# special treatment from redemption - the same email binding, the same refusal.
+# ---------------------------------------------------------------------------
+
+SIGNUP_URL = "/api/v1/accounts/parents"
+
+
+def test_a_self_signed_up_parent_can_redeem_a_code(
+    make_identity, make_school, make_user, make_student, make_invite, api_client_for
+):
+    school = make_school()
+    student = make_student(school)
+    invite = make_invite(student=student, issuer=make_user(TEACHER, school=school))
+
+    subject, email = make_identity()
+    client = api_client_for(identity=(subject, email))
+    client.post(SIGNUP_URL, {"name": "A. Kulkarni"}, format="json")
+
+    redeemed = client.post(ENDPOINT, {"code": invite.code}, format="json")
+
+    assert redeemed.status_code == 201
+    assert redeemed.json()["child"]["id"] == student.id
+    assert [c["id"] for c in client.get("/api/v1/parents/children/").json()["results"]] == [
+        student.id
+    ]
+
+
+def test_an_email_bound_code_binds_to_the_verified_address_not_the_typed_name(
+    make_identity, make_school, make_user, make_student, make_invite, api_client_for
+):
+    """Sign-up takes the email from the token and offers no field for it, so an
+    account created under one address cannot claim a code issued to another."""
+    school = make_school()
+    student = make_student(school)
+    invite = make_invite(
+        student=student, issuer=make_user(TEACHER, school=school), email="intended@parent.test"
+    )
+
+    subject, email = make_identity()  # a different address entirely
+    client = api_client_for(identity=(subject, email))
+    client.post(SIGNUP_URL, {"name": "A. Kulkarni"}, format="json")
+
+    refused = client.post(ENDPOINT, {"code": invite.code}, format="json")
+
+    assert refused.status_code == 400
+    assert client.get("/api/v1/parents/children/").json()["results"] == []

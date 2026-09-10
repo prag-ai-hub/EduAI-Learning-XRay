@@ -16,6 +16,7 @@ about who a caller is.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 import jwt
 from django.conf import settings
@@ -76,6 +77,55 @@ class SupabasePrincipal:
         return f"{self.email} ({self.role})"
 
 
+@lru_cache(maxsize=1)
+def _jwks_client() -> jwt.PyJWKClient:
+    """Cached, because this is on the path of every authenticated request.
+
+    PyJWKClient keeps its own key cache and only refetches when it meets a `kid`
+    it has not seen, so a key rotation is picked up without a redeploy while a
+    steady state costs nothing.
+    """
+    return jwt.PyJWKClient(settings.SUPABASE_JWKS_URL, cache_keys=True)
+
+
+def _verifier_for(token: str) -> tuple[object, list[str]]:
+    """The key and the single algorithm this token is allowed to be checked with.
+
+    Supabase signs with the legacy shared secret (HS256) or, once a project has
+    signing keys, asymmetrically with a `kid` naming a public key in its JWKS.
+    Both have to work: which one arrives is the project's configuration, and a
+    project that rotates must not take the API down.
+
+    The header CHOOSES a verifier from an allowlist; it never supplies one. That
+    distinction is the whole defence. Passing `algorithms=[header["alg"]]`
+    straight through would accept `alg: none`, and - worse - would let an
+    attacker take a real ES256 token, re-sign it as HS256 using the PUBLIC key
+    as the shared secret, and have us verify it against that same public key.
+    An algorithm outside both lists is refused before any key is fetched.
+    """
+    header = jwt.get_unverified_header(token)
+    algorithm = header.get("alg")
+
+    if algorithm in settings.SUPABASE_JWT_ALGORITHMS:
+        if not settings.SUPABASE_JWT_SECRET:
+            raise jwt.InvalidTokenError("no shared secret configured for a symmetric token")
+        return settings.SUPABASE_JWT_SECRET, list(settings.SUPABASE_JWT_ALGORITHMS)
+
+    if algorithm in settings.SUPABASE_JWT_ASYMMETRIC_ALGORITHMS:
+        if not settings.SUPABASE_JWKS_URL:
+            raise jwt.InvalidTokenError("no JWKS URL configured for an asymmetric token")
+        try:
+            signing_key = _jwks_client().get_signing_key_from_jwt(token)
+        except jwt.PyJWKClientError as exc:
+            # An unreachable JWKS endpoint is our outage, not a bad token, but
+            # it still cannot authorise anyone - and the caller learns nothing
+            # from the distinction, so it stays an opaque failure.
+            raise jwt.InvalidTokenError(f"signing key unavailable: {exc}") from exc
+        return signing_key.key, [algorithm]
+
+    raise jwt.InvalidTokenError(f"unsupported algorithm {algorithm!r}")
+
+
 class SupabaseJWTAuthentication(authentication.BaseAuthentication):
     """DRF authentication for `Authorization: Bearer <supabase jwt>`."""
 
@@ -97,10 +147,11 @@ class SupabaseJWTAuthentication(authentication.BaseAuthentication):
 
     def _decode(self, token: str) -> dict:
         try:
+            key, algorithms = _verifier_for(token)
             return jwt.decode(
                 token,
-                settings.SUPABASE_JWT_SECRET,
-                algorithms=settings.SUPABASE_JWT_ALGORITHMS,
+                key,
+                algorithms=algorithms,
                 audience=settings.SUPABASE_JWT_AUDIENCE,
                 options={"require": ["exp", "sub"]},
             )

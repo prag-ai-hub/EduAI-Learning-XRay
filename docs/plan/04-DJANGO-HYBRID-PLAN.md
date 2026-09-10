@@ -212,8 +212,8 @@ Status: ▢ not started · ◐ partly covered by existing work · ✔ done
 | 8.1 | Secrets audit: `.env.example` + `.gitignore` review | 2.0 | ✔ **Done 2026-09-07.** Automated instead of read once, so Day 19 re-runs it: 66 checks over the working tree (432 files, not just the 249 in the index) and all reachable history. Closed four `.gitignore` gaps. The Google pair still needs rotating - only the account owner can do that |
 | 8.2 | Input validation & serializer-level sanitization | 3.0 | ✔ **Done 2026-09-07.** `apps/common/validators.py`: NFC, invisibles, bidi overrides, NUL, JSON depth/width. Runs on every string by default; `RAW_FIELDS` exempts prompt text, base64 blobs and `response_format`, which sanitising would reject rather than clean |
 | 8.3 | Audit logging for admin actions | 3.5 | ✔ **Done 2026-09-07.** Read surface at `/api/v1/audit/events/`: capability-gated, tenant-scoped, whitelisted filters, newest-first. `detail_json` is whitelisted per action because the older surface writes full evaluation snapshots to the same table |
-| 9.1 | School Admin subscription/plan status API | 2.5 | ▢ |
-| 9.2 | QA: RBAC + JWT auth across all 4 roles | 4.0 | ▢ |
+| 9.1 | School Admin subscription/plan status API | 2.5 | ✔ **Done 2026-09-08.** `GET /api/v1/billing/subscription` returns the contract and the resolved entitlement together - a `past_due` subscription past its grace window is still a subscription and no longer an entitlement. `POST /subscription/cancel` stops renewal at period end. A SuperAdmin naming `?school=` goes through `require_school_scope`, so it needs a live grant and the read is audited |
+| 9.2 | QA: RBAC + JWT auth across all 4 roles | 4.0 | ✔ **Done 2026-09-08.** Per-feature coverage already reached all four roles in 11 files, but nothing looked at the route table. `backend/tests/test_endpoint_authorisation.py` walks the real URLconf and checks every published (view, action): a capability is resolvable through all three declaration styles, every capability named exists, a `capability_map` covers every action the router publishes, and no exemption outlives its reason. 157 cases; verified to catch an ungated view, a missing map entry and a typo'd capability |
 | 9.3 | **PII hotfix in `grade/route.ts`** | 2.0 | ✔ **Done 2026-09-03**, via the AI proxy: the name is replaced before the request leaves and mapped back on the response; a failed scrub refuses to send |
 | 10.1–10.3 | Frontend: Super Admin console, school registration form, API client with JWT | 8.5 | ✔ **Pulled forward and done** alongside Days 5–6, so the feature ships end to end |
 
@@ -221,17 +221,17 @@ Status: ▢ not started · ◐ partly covered by existing work · ✔ done
 
 | Day | Task | Hrs | Status |
 | --- | --- | ---: | --- |
-| 11.1 | Payment gateway SDK integration (server-side) | 4.0 | ▢ |
-| 11.2 | Parent role support; JWT resolves Parent correctly | 2.0 | ▢ |
-| 11.3 | 'Link a child' via invite code — API | 2.5 | ▢ (schema exists: M8) |
-| 12.1 | B2B checkout: subscribe/upgrade API | 4.0 | ▢ |
-| 12.2 | Frontend: parent sign-up/sign-in + link-a-child UI | 2.0 | ▢ |
-| 12.3 | Parent dashboard: linked-children API | 2.5 | ▢ |
-| 13.1 | Subscribe/upgrade logic + plan-change handling | 4.0 | ▢ |
-| 13.2 | Teacher-side 'Invite parent' API | 2.0 | ▢ |
+| 11.1 | Payment gateway SDK integration (server-side) | 4.0 | ✔ **Done 2026-09-09.** `gateway.py` - Razorpay over its REST API with httpx and Basic auth, not the SDK. Explicit timeouts, failures mapped to 502/503 rather than 500, one `_request` seam so the suite cannot dial out |
+| 11.2 | Parent role support; JWT resolves Parent correctly | 2.0 | ✔ **Done 2026-09-09.** Verified end to end, including that `users_role_school_scope_check` (a Parent carries no school) holds everywhere the portal touches |
+| 11.3 | 'Link a child' via invite code — API | 2.5 | ✔ **Done 2026-09-09.** `POST /parents/links/redeem`, Parent only. Every refusal is identical — wrong, expired, spent, revoked and wrong-address all answer the same 400 — so the endpoint is not an oracle for which codes exist. The check, the insert and the `used_count` increment are one SQL function under `FOR UPDATE`. **M18** fixed a safeguarding defect found in review: M8's redeem reactivated a *revoked* link before checking expiry, use count or email binding, so a stale code undid the only mechanism for ending a parent's access to a child |
+| 12.1 | B2B checkout: subscribe/upgrade API | 4.0 | ✔ **Done 2026-09-09.** `POST /billing/checkout/subscription`, SchoolAdmin only. Idempotent behind a per-payer advisory lock; a failed attempt releases the key rather than wedging the payer out of that plan |
+| 12.2 | Frontend: parent sign-up/sign-in + link-a-child UI | 2.0 | ✔ **Done 2026-09-10.** `/parent/join` — the one screen in the product where a person creates their own profile row. Needed a backend half the row did not name: **`POST /accounts/parents`**, because nothing could mint a Parent. `PUT /api/profile` answered 409 `school_registration_required` for anyone with no row, and a Parent has no school to register — so a signed-up parent was a verified identity that every Django endpoint met with 403 and the redeem trigger (`parent_student_links_role_check`) refused outright. Identity-only like school registration, `auth`-throttled, idempotent, and it **never converts an existing account** (a Teacher would shed their school). The email is the token's — an email-bound code is matched against `public.users.email`, so a body field for it would let anyone claim someone else's code. Sign-up and redemption stay two calls: redemption is the throttled, audited half and has to work alone for a second child a term later. `LinkChildForm` is shared by /parent/join and the dashboard and renders the server's one-sentence refusal verbatim. 18 new tests; smoke-tested over HTTP end to end |
+| 12.3 | Parent dashboard: linked-children API | 2.5 | ✔ **Done 2026-09-09.** `GET /parents/children/`, scoped through `parent_student_links` by the tenancy mixin - a parent has no school, so `parent_link_field` is the whole rule |
+| 13.1 | Subscribe/upgrade logic + plan-change handling | 4.0 | ✔ **Done 2026-09-09.** A captured payment starts a period from capture, except an unchanged plan which appends. Credits accumulate, never reset. **Nothing is prorated** - there is no refund path to honour a proration with, and whether to prorate is the pricing owner's call |
+| 13.2 | Teacher-side 'Invite parent' API | 2.0 | ✔ **Done 2026-09-09.** `POST /parents/invite-codes/` + `/revoke`. POST-only on purpose: a code is a bearer credential, and an endpoint that read one back would let anyone holding the issuing capability collect every live code in their school |
 | 13.3 | Parent dashboard: reports/interventions API | 2.5 | ▢ (read model exists: M11) |
 | 14.1–14.2 | Frontend: B2B checkout UI, parent dashboard UI | 6.0 | ▢ |
-| 14.3 | B2C credit top-up logic | 2.5 | ▢ |
+| 14.3 | B2C credit top-up logic | 2.5 | ✔ **Done 2026-09-09.** `POST /billing/checkout/topup`, Parent only. Credits move only on capture - checkout moves no balance at all - and the grant is idempotent under a row lock on the payment |
 | 15.1 | New OpenAI proxy endpoint (server-side key isolation) | 3.0 | ✔ **Pulled forward, done 2026-09-03.** Provider keys exist only in the backend |
 | 15.2 | PII scrubbing / anonymization layer for the proxy | 3.0 | ✔ **Pulled forward, done 2026-09-03** |
 | 15.3 | Plans & pricing schema finalization | 2.5 | ◐ M9 shape exists; pricing not finalized |

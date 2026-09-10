@@ -95,8 +95,8 @@ def test_an_intervention_plan_never_names_another_child(
     response = api_client_for(parent).get(REPORTS)
 
     child = response.data["children"][0]
-    assert child["interventions"][0]["concept"] == "Comparing fractions"
-    assert child["interventions"][0]["status"] == "Planned"
+    assert child["classInterventions"][0]["concept"] == "Comparing fractions"
+    assert child["classInterventions"][0]["status"] == "Planned"
     assert OTHER_CHILD_CANARY not in body(response)
 
 
@@ -135,7 +135,53 @@ def test_a_parent_reads_one_child_by_id(
     assert response.status_code == 200
     assert response.data["child"]["studentId"] == student.id
     assert len(response.data["child"]["results"]) == 1
-    assert len(response.data["child"]["interventions"]) == 1
+    assert len(response.data["child"]["classInterventions"]) == 1
+
+
+def test_each_sibling_url_returns_that_sibling(
+    linked_child, make_published_result, make_student, make_link, api_client_for
+):
+    """One parent, two children, and each URL has to pick its own.
+
+    Every other per-child test links a parent to a SINGLE child, so the filter
+    in `_reports_for` could be deleted and they would all still pass while
+    `children/{B}/reports/` answered with A's marks. A parent seeing another of
+    their own children is a smaller breach than seeing a stranger's, which is
+    why nothing caught it - but it is still the wrong child under the wrong URL.
+
+    BOTH directions are asserted deliberately. The view returns `payload[0]`,
+    so with the filter removed every request answers with whichever child the
+    read model happens to order first; checking one URL passes or fails on that
+    ordering rather than on the behaviour. Checking both cannot: one of them is
+    always the child that does not sort first.
+    """
+    school, first, parent, _ = linked_child(make_published_result)
+
+    second = make_student(school, name="Kabir Rao")
+    second.school_class = first.school_class
+    second.save(update_fields=["school_class"])
+    make_link(parent, second)
+    make_published_result(
+        second,
+        title="Photosynthesis - unit test",
+        subject="Science",
+        score="17.00",
+        feedback="Chlorophyll is understood; the gas exchange step needs another pass.",
+    )
+
+    client = api_client_for(parent)
+    for student, expected, sibling in (
+        (first, "Fractions - unit test", "Photosynthesis"),
+        (second, "Photosynthesis - unit test", "Fractions"),
+    ):
+        response = client.get(f"{CHILDREN}{student.id}/reports/")
+
+        assert response.status_code == 200
+        assert response.data["child"]["studentId"] == student.id
+        assert [r["title"] for r in response.data["child"]["results"]] == [expected]
+        assert sibling not in body(response), (
+            f"{student.name}'s URL answered with their sibling's assessment"
+        )
 
 
 def test_a_parent_cannot_read_another_child_s_report_by_id(

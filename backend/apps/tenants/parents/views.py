@@ -279,7 +279,14 @@ def _reports_for(parent_id, *, only_student: str | None = None) -> list[dict]:
         [child["studentId"] for child in children if child.get("studentId")]
     )
     for child in children:
-        child["interventions"] = interventions.get(child.get("studentId"), [])
+        # `classInterventions`, not `interventions`. public.interventions carries
+        # an assessment_id and no student_id, so an intervention is the plan for
+        # a CLASS's assessment - two siblings in one class get byte-identical
+        # lists. Under a key that reads as personal, a parent would reasonably
+        # take "practise equivalent fractions" as advice written about their own
+        # child. Naming it for what it is costs nothing here and is the kind of
+        # thing that is never renamed once a screen renders it.
+        child["classInterventions"] = interventions.get(child.get("studentId"), [])
     return children
 
 

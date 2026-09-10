@@ -21,7 +21,7 @@ from rest_framework import serializers
 from apps.common.serializers import BaseModelSerializer, BaseSerializer
 from apps.common.validators import BoundedDictField
 
-from .models import Payment, Plan, Subscription
+from .models import Invoice, Payment, Plan, Subscription
 
 #: `plans.code` is `^[a-z0-9_]{3,60}$` in the database. Validated here so a
 #: malformed code is a 400 naming the field, not a lookup that finds nothing.
@@ -207,6 +207,109 @@ class TopupCheckoutSerializer(_CheckoutSerializer):
     """B2C: a parent buys report credits. Parent only."""
 
 
+class InvoiceSerializer(BaseModelSerializer):
+    """One GST invoice. Read-only, because the row is immutable.
+
+    `billing_name` and `billing_address` ARE published here, and the reasoning
+    differs from `PaymentSerializer` deliberately rather than by oversight. A
+    payment list is a ledger and has no business handing out a postal address;
+    an invoice *is* the document that address is printed on, and anyone who may
+    read this row may already download the PDF that shows it. Hiding it here
+    while showing it there would be a difference nobody could explain.
+
+    `credit_note_for` is exposed as the number rather than the id: a reader
+    needs to know which document this corrects, and the number is what that
+    document is called everywhere else.
+    """
+
+    credit_note_for = serializers.CharField(
+        source="credit_note_for.invoice_number", read_only=True, default=None
+    )
+    #: The attname on the model, so no `source` - DRF refuses a redundant one.
+    payment_id = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Invoice
+        fields = [
+            "id",
+            "invoice_number",
+            "payment_id",
+            "billing_name",
+            "billing_address",
+            "gstin",
+            "place_of_supply",
+            "sac_code",
+            "tax_rate_bps",
+            "taxable_paise",
+            "cgst_paise",
+            "sgst_paise",
+            "igst_paise",
+            "total_paise",
+            "invoice_date",
+            "status",
+            "credit_note_for",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+class ReceiptSerializer(BaseModelSerializer):
+    """What a payer actually wants back: what they paid, and the invoice for it.
+
+    A receipt is a payment joined to its invoice, not a table of its own. Only
+    settled payments reach this serialiser - an unpaid order is not a receipt -
+    so `captured_at` is never null here and a client can render a date without
+    a branch.
+
+    The billing snapshot stays out, exactly as it does in `PaymentSerializer`:
+    the invoice endpoint is where those details belong.
+    """
+
+    plan_code = serializers.CharField(source="plan.code", read_only=True, default=None)
+    plan_name = serializers.CharField(source="plan.name", read_only=True, default=None)
+    invoice_id = serializers.SerializerMethodField()
+    invoice_number = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Payment
+        fields = [
+            "id",
+            "purpose",
+            "status",
+            "plan_code",
+            "plan_name",
+            "amount_paise",
+            "tax_paise",
+            "total_paise",
+            "currency",
+            "method",
+            "gateway_payment_id",
+            "captured_at",
+            "refunded_at",
+            "created_at",
+            "invoice_id",
+            "invoice_number",
+        ]
+        read_only_fields = fields
+
+    def _invoice(self, payment):
+        # The tax invoice, never the credit note: a receipt names the document
+        # that recorded the charge. Prefetched by the viewset, so this is a list
+        # scan over a couple of rows rather than a query per receipt.
+        for invoice in payment.invoices.all():
+            if invoice.credit_note_for_id is None:
+                return invoice
+        return None
+
+    def get_invoice_id(self, payment) -> str | None:
+        invoice = self._invoice(payment)
+        return str(invoice.id) if invoice else None
+
+    def get_invoice_number(self, payment) -> str | None:
+        invoice = self._invoice(payment)
+        return invoice.invoice_number if invoice else None
+
+
 class EntitlementSerializer(BaseSerializer):
     """`entitlements.Entitlement`, flattened for the wire.
 
@@ -230,8 +333,10 @@ __all__ = [
     "STATE_CODE",
     "BillingDetailsSerializer",
     "EntitlementSerializer",
+    "InvoiceSerializer",
     "PaymentSerializer",
     "PlanSerializer",
+    "ReceiptSerializer",
     "SubscriptionCheckoutSerializer",
     "SubscriptionSerializer",
     "TopupCheckoutSerializer",

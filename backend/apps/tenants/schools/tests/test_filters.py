@@ -30,31 +30,44 @@ def directory(make_school, make_user, make_student):
     return {"pending": pending, "active": active}
 
 
+#: The two schools the `directory` fixture creates. Assertions are scoped to
+#: these rather than to the whole result set, because the suite runs against the
+#: CONFIGURED database, not a fresh one (see conftest.py) - so a developer with
+#: a real school registered locally would otherwise fail these on data that has
+#: nothing to do with the behaviour under test.
+FIXTURE_SCHOOLS = ("Nehru Vidyalaya", "Gandhi Public School")
+
+
 def names(response):
     return [row["name"] for row in response.json()["results"]]
 
 
+def ours(response):
+    """Only the fixture's own schools, in the order the endpoint returned them."""
+    return [name for name in names(response) if name in FIXTURE_SCHOOLS]
+
+
 def test_search_matches_a_school_name(directory, make_user, api_client_for):
     response = api_client_for(make_user(SUPER_ADMIN)).get(f"{LIST}?search=nehru")
-    assert names(response) == ["Nehru Vidyalaya"]
+    assert ours(response) == ["Nehru Vidyalaya"]
 
 
 @pytest.mark.parametrize("term", ["pune", "PUNE", "Pun"])
 def test_search_matches_city_case_insensitively(directory, make_user, api_client_for, term):
-    assert names(api_client_for(make_user(SUPER_ADMIN)).get(f"{LIST}?search={term}")) == [
+    assert ours(api_client_for(make_user(SUPER_ADMIN)).get(f"{LIST}?search={term}")) == [
         "Nehru Vidyalaya"
     ]
 
 
 def test_search_matches_board(directory, make_user, api_client_for):
-    assert names(api_client_for(make_user(SUPER_ADMIN)).get(f"{LIST}?search=ICSE")) == [
+    assert ours(api_client_for(make_user(SUPER_ADMIN)).get(f"{LIST}?search=ICSE")) == [
         "Gandhi Public School"
     ]
 
 
 def test_search_matches_a_school_id_exactly(directory, make_user, api_client_for):
     school = directory["active"]
-    assert names(api_client_for(make_user(SUPER_ADMIN)).get(f"{LIST}?search={school.id}")) == [
+    assert ours(api_client_for(make_user(SUPER_ADMIN)).get(f"{LIST}?search={school.id}")) == [
         school.name
     ]
 
@@ -63,13 +76,13 @@ def test_a_partial_id_is_not_a_search(directory, make_user, api_client_for):
     # ids are `school-{uuid}`; substring-matching a partial uuid is a fishing
     # expedition, not a search.
     fragment = directory["active"].id[:20]
-    assert names(api_client_for(make_user(SUPER_ADMIN)).get(f"{LIST}?search={fragment}")) == []
+    assert ours(api_client_for(make_user(SUPER_ADMIN)).get(f"{LIST}?search={fragment}")) == []
 
 
 def test_filters_combine(directory, make_user, api_client_for):
     client = api_client_for(make_user(SUPER_ADMIN))
-    assert names(client.get(f"{LIST}?status=Active&city=Mumbai")) == ["Gandhi Public School"]
-    assert names(client.get(f"{LIST}?status=Pending&city=Mumbai")) == []
+    assert ours(client.get(f"{LIST}?status=Active&city=Mumbai")) == ["Gandhi Public School"]
+    assert ours(client.get(f"{LIST}?status=Pending&city=Mumbai")) == []
 
 
 def test_an_unknown_status_is_refused_rather_than_ignored(directory, make_user, api_client_for):

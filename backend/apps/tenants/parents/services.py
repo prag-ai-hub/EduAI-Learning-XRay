@@ -267,7 +267,12 @@ def _refusal_reason(*, principal, invite: ParentInviteCode | None) -> str:
         return _REFUSAL_EXPIRED
     if invite.used_count >= invite.max_uses:
         return _REFUSAL_EXHAUSTED
-    if invite.email and invite.email.strip().lower() != (principal.email or "").strip().lower():
+    # No .strip(). This only classifies a refusal the DATABASE has already
+    # made, and redeem_parent_invite_code compares `lower(v_code.email)` with
+    # `lower(users.email)` untrimmed - so trimming here would let the audit
+    # trail record "wrong address" for a code the function refused as expired,
+    # or the reverse. The reason is only worth recording if it is the reason.
+    if invite.email and invite.email.lower() != (principal.email or "").lower():
         return _REFUSAL_EMAIL
     return _REFUSAL_OTHER
 
