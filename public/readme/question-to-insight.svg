@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="90" y1="60" x2="1510" y2="840" gradientUnits="userSpaceOnUse"><stop stop-color="#102D4E"/><stop offset="1" stop-color="#081C33"/></linearGradient>
+    <linearGradient id="glow" x1="885" y1="270" x2="1390" y2="720" gradientUnits="userSpaceOnUse"><stop stop-color="#3ED4A1" stop-opacity=".35"/><stop offset="1" stop-color="#73A5FF" stop-opacity=".05"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#001326" flood-opacity=".35"/></filter>
+  </defs>
+  <rect width="1600" height="900" rx="30" fill="url(#bg)"/>
+  <circle cx="1380" cy="110" r="260" fill="#1E5782" opacity=".25"/><circle cx="126" cy="820" r="280" fill="#0D5C64" opacity=".22"/>
+  <text x="100" y="110" fill="#76E1BA" font-family="Arial, sans-serif" font-size="23" font-weight="700" letter-spacing="3">EDUAI LEARNING X-RAY</text>
+  <text x="100" y="175" fill="white" font-family="Arial, sans-serif" font-size="50" font-weight="700">From one answer to a clear next step</text>
+  <text x="100" y="220" fill="#B9C9D9" font-family="Arial, sans-serif" font-size="25">Question evidence, teacher review, and targeted learning support — in one view.</text>
+  <g filter="url(#shadow)">
+    <rect x="100" y="285" width="520" height="490" rx="24" fill="#FFFDF8"/>
+    <rect x="100" y="285" width="520" height="72" rx="24" fill="#F1F5F7"/>
+    <text x="142" y="330" fill="#173B5D" font-family="Arial, sans-serif" font-size="22" font-weight="700">QUESTION 3 · ALGEBRA</text>
+    <text x="142" y="412" fill="#1D3348" font-family="Arial, sans-serif" font-size="30" font-weight="700">Solve: 3x + 5 = 20</text>
+    <rect x="142" y="451" width="436" height="165" rx="16" fill="#F7FAFC" stroke="#DFE8EF" stroke-width="2"/>
+    <text x="170" y="495" fill="#607388" font-family="Arial, sans-serif" font-size="20" font-weight="700">STUDENT WORK</text>
+    <text x="170" y="550" fill="#233D55" font-family="Arial, sans-serif" font-size="31" font-style="italic">3x = 20 − 5</text>
+    <text x="170" y="594" fill="#E36C54" font-family="Arial, sans-serif" font-size="31" font-style="italic">x = 15</text>
+    <rect x="142" y="652" width="205" height="74" rx="15" fill="#FFF1ED"/>
+    <text x="170" y="683" fill="#A94735" font-family="Arial, sans-serif" font-size="18" font-weight="700">PROPOSED MARK</text>
+    <text x="170" y="713" fill="#A94735" font-family="Arial, sans-serif" font-size="27" font-weight="700">1 / 3</text>
+    <rect x="365" y="652" width="213" height="74" rx="15" fill="#EAFBF4"/>
+    <text x="392" y="683" fill="#177954" font-family="Arial, sans-serif" font-size="18" font-weight="700">EVIDENCE FOUND</text>
+    <text x="392" y="713" fill="#177954" font-family="Arial, sans-serif" font-size="20" font-weight="700">1 correct step</text>
+  </g>
+  <path d="M665 518H798" stroke="#76E1BA" stroke-width="7" stroke-linecap="round"/><path d="M773 495L808 518L773 541" stroke="#76E1BA" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <g filter="url(#shadow)">
+    <rect x="845" y="285" width="655" height="490" rx="24" fill="url(#glow)" stroke="#2B587A" stroke-width="2"/>
+    <text x="890" y="344" fill="#76E1BA" font-family="Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="2">LEARNING X-RAY</text>
+    <text x="890" y="402" fill="white" font-family="Arial, sans-serif" font-size="34" font-weight="700">The subtraction step is secure.</text>
+    <text x="890" y="440" fill="#C8D8E7" font-family="Arial, sans-serif" font-size="24">The final division rule needs re-teaching.</text>
+    <rect x="890" y="485" width="555" height="84" rx="16" fill="#163D5E"/>
+    <circle cx="926" cy="527" r="14" fill="#F6B951"/><text x="958" y="517" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="700">LIKELY MISCONCEPTION</text>
+    <text x="958" y="545" fill="#D5E1EC" font-family="Arial, sans-serif" font-size="20">Treating 3x as 3 + x</text>
+    <rect x="890" y="591" width="265" height="123" rx="16" fill="#123D50"/>
+    <text x="918" y="629" fill="#76E1BA" font-family="Arial, sans-serif" font-size="17" font-weight="700">NEXT TEACHING STEP</text>
+    <text x="918" y="666" fill="white" font-family="Arial, sans-serif" font-size="20" font-weight="700">Model inverse operations</text>
+    <text x="918" y="693" fill="#C7D8E6" font-family="Arial, sans-serif" font-size="18">with two worked examples</text>
+    <rect x="1180" y="591" width="265" height="123" rx="16" fill="#173C68"/>
+    <text x="1208" y="629" fill="#9BC5FF" font-family="Arial, sans-serif" font-size="17" font-weight="700">STUDENT PRACTICE</text>
+    <text x="1208" y="666" fill="white" font-family="Arial, sans-serif" font-size="20" font-weight="700">3 targeted questions</text>
+    <text x="1208" y="693" fill="#C7D8E6" font-family="Arial, sans-serif" font-size="18">with mastery check</text>
+  </g>
+  <text x="100" y="842" fill="#C4D2DF" font-family="Arial, sans-serif" font-size="20">AI proposes; teachers review the evidence and decide what happens next.</text>
+</svg>

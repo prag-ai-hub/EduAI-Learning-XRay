@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="./public/brand/logo.png" alt="EduAI Hub" width="240" />
-
 # EduAI Learning X-Ray
 
 ### Turn assessment evidence into clear marks, meaningful learning gaps, and next-step teaching plans.
@@ -43,6 +41,8 @@ Learning X-Ray is an AI-assisted assessment workspace for educators. Upload a qu
 - Separates genuine conceptual gaps from presentation feedback, so strong students are not given unnecessary remediation.
 - Creates parent-ready summaries that focus on what a student needs next.
 
+<img src="./public/readme/question-to-insight.svg" alt="A question answer becomes evidence-backed learning insight and a clear teaching next step" width="100%" />
+
 ### Resources built from the result
 
 - Personalised study guides with explanations, worked examples, guided practice, and mastery checks.
@@ -50,6 +50,8 @@ Learning X-Ray is an AI-assisted assessment workspace for educators. Upload a qu
 - Downloadable learning-gap reports, study guides, marksheets, and class-level summaries.
 - Flowcharts and mind maps to support visual learning.
 - Secure share links for student and parent-facing dashboards.
+
+<img src="./public/readme/class-concept-heatmap.svg" alt="A class concept heatmap highlights the class-wide teaching focus" width="100%" />
 
 ### Built for the educator workflow
 
