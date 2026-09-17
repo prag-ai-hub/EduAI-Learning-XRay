@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="./public/brand/logo.png" alt="EduAI Hub" width="240" />
+
 # EduAI Learning X-Ray
 
 ### Turn assessment evidence into clear marks, meaningful learning gaps, and next-step teaching plans.
