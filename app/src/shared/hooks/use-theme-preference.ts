@@ -14,7 +14,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { useColorScheme } from '@/shared/hooks/use-color-scheme';
+import { setSchemeOverride } from '@/shared/hooks/scheme-override';
+import { useDeviceColorScheme } from '@/shared/hooks/use-color-scheme';
 import { StorageKeys, appStore } from '@/shared/storage';
 
 export type ThemeChoice = 'system' | 'light' | 'dark';
@@ -33,7 +34,9 @@ export type ThemePreference = {
 };
 
 export function useThemePreference(): ThemePreference {
-  const scheme = useColorScheme();
+  // The device, not `useColorScheme`: that one already returns the override,
+  // so 'system' would resolve to whatever was last chosen instead of the OS.
+  const scheme = useDeviceColorScheme();
   const device: ResolvedTheme = scheme === 'dark' ? 'dark' : 'light';
   const [choice, setStoredChoice] = useState<ThemeChoice>('system');
   const [ready, setReady] = useState(false);
@@ -49,7 +52,10 @@ export function useThemePreference(): ThemePreference {
         .getJson<ThemeChoice | null>(StorageKeys.theme, null)
         .catch(() => null);
       if (!alive) return;
-      if (saved !== null && CHOICES.includes(saved)) setStoredChoice(saved);
+      if (saved !== null && CHOICES.includes(saved)) {
+        setStoredChoice(saved);
+        setSchemeOverride(saved === 'system' ? null : saved);
+      }
       setReady(true);
     })();
     return () => {
@@ -62,6 +68,7 @@ export function useThemePreference(): ThemePreference {
     // write before moving feels broken, and the write cannot fail in a way the
     // user could act on.
     setStoredChoice(next);
+    setSchemeOverride(next === 'system' ? null : next);
     void appStore.setJson(StorageKeys.theme, next).catch(() => {});
   }, []);
 

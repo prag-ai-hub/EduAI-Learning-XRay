@@ -53,6 +53,8 @@ export type AdminModule =
   | 'Students'
   | 'Academic years'
   | 'Branding & Privacy'
+  // A school's plan and payments. The web had no billing screen (plan row 14.1).
+  | 'Billing'
   | 'Schools'
   | 'Analytics'
   | 'AI Configuration'

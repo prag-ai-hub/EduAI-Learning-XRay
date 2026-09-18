@@ -181,6 +181,82 @@ defects in waves 0-2 but obligations on the waves that consume them.
   two modules, kept apart so `shared/` does not import `features/`. A caller
   holding both should convert explicitly rather than assume they are assignable.
 
+## Waves 4-7: the workspace shell landed (2026-09-15)
+
+`/app` exists. Before this, every teacher and school administrator who signed in
+reached a 404: all the pages and dialogs had been ported, and nothing assembled
+them. Driven in Chrome against the local stack - teacher and SchoolAdmin sign-in,
+every module visited, no page errors, no failed API calls.
+
+| New file | Ported from |
+|---|---|
+| `src/app/app.tsx` | `FunctionalEduAIApp` - the gate: splash, /signin, profile completion, Parent -> /parent |
+| `src/features/workspace/screens/workspace.tsx` | `WorkspaceApp` + `TeacherApp` |
+| `src/features/workspace/components/dialog-registry.tsx` | `AppDialog` - all 52 dialog names, `never`-checked |
+| `src/features/admin/components/admin-apps.tsx` | `SchoolAdminApp`, `PrincipalApp`, `PlatformApp` |
+| `src/features/teacher/components/{work,xray}.tsx` | `Work`, `AssessmentDecision`, `AssessmentJourney`, `XRay` |
+| `src/features/grading/components/{review,per-file-grade}.tsx` | `Review`, `PerFileGradeDialog` |
+| `src/features/documents/components/worksheet-dialog.tsx` | `WorksheetDialog` |
+
+Fixed in the foundation on the way, because the shell was the first thing to
+exercise them together:
+
+* **`Grid.span` / `cardSpan2` set `flexBasis: 100%`.** Correct in a wrapping row,
+  wrong on a page: `flexBasis` follows the parent's main axis, so a span card
+  placed directly in a screen's vertical stack grew to the scroll view's height.
+  Width only now.
+* **The appearance toggle restyled nothing.** Every style reads
+  `useColorScheme`, which only knew the device. `@/shared/hooks/scheme-override`
+  is the in-app choice; `useThemePreference` publishes to it. Not
+  `Appearance.setColorScheme`, which react-native-web does not implement.
+* **The web export could not build** once a route reached `lib/pdf.ts`: jspdf's
+  `node` build calls AMD `require([...])`, which Metro cannot transform, and
+  static rendering resolves under the `node` condition. `metro.config.js`
+  resolves jspdf to its ES build on every platform.
+* **Django's dev CORS allowed only :3000**, the retiring Next.js app. The Expo web
+  app on :8081 had every Django response refused by the browser.
+* A brand-new teacher has no assessments, so `selected` is undefined. The web's
+  `Review` crashed on it; the shell shows an empty state, and the registry
+  guards the 18 dialogs that read it.
+
+Known follow-ups, none blocking - each was reported by the agent that ported the
+file, and each is either web parity or needs a shared-kit change:
+
+* **Review:** on a device, "jump to question" only expands it - the shell needs to
+  hand down a scroll handle. `reviewSummaryCompact` lacks the web's
+  `margin-bottom:-148px` above 1050px, so the question navigator sits ~160px low
+  on wide screens. No clipboard module: "Copy" opens the share sheet on native.
+* **Per-file grade:** `Select` has no option groups, so the question-paper picker
+  is one flat list. The evaluator review panel is unreachable, exactly as on the
+  web - `useGradeRun` never sets `pendingAnalysis`.
+* **Worksheet:** Language and the two "Include..." checkboxes are shown and never
+  sent - web parity.
+* **X-Ray:** its class/subject scope is chosen once per visit - web parity.
+* **SchoolAdmin:** Students and Reports carry two page headings - web parity.
+  In dark mode `listItemAction` (navy) is low-contrast on the dark surface.
+* **Billing** (plan row 14.1) is web-only at the payment sheet; see
+  `features/billing/lib/razorpay.ts`.
+
+## The modal bug the port carried (found 2026-09-17)
+
+`ModalShell` rendered the panel *inside* the backdrop's `Pressable` and stopped
+outside-press dismissal with `onStartShouldSetResponder` on the panel. That is
+the documented React Native way and it does not hold on react-native-web: a
+click on a `TextInput` inside the panel still reached the backdrop's `onPress`,
+so **clicking any field closed the dialog**. Every form in the workspace - add a
+class, add a student, invite a user, every settings dialog - was unusable in a
+browser, and nothing caught it because the port's checks were typecheck, lint
+and rendering, none of which click anything.
+
+The fix is structural: the backdrop is now an absolutely positioned sibling
+behind the panel, so "outside" is a different element rather than an ancestor
+whose handler has to be suppressed. Verified in Chrome that a field click,
+select-all and typing all leave the dialog open, and that pressing outside still
+closes it.
+
+The general lesson for the remaining waves: a ported screen that typechecks and
+renders has not been shown to *work*. Drive the interaction.
+
 ## Deleting `frontend/`: one blocker down
 
 The Supabase CLI used to be a devDependency of `frontend/`, so every `make db-*`

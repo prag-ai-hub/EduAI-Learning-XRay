@@ -59,6 +59,9 @@ const SCHOOL_ADMIN_NAV: readonly AdminModule[] = [
   'Students',
   'Academic years',
   'Branding & Privacy',
+  // After the monolith's seven, so the phone's bottom bar - the first five -
+  // is unchanged. Billing is a desk task, not a daily one.
+  'Billing',
   'Reports',
 ];
 
@@ -267,13 +270,21 @@ export type MobileNavProps = {
   module: NavModule;
   nav: readonly NavModule[];
   onModule: (next: NavModule) => void;
+  /**
+   * The device's bottom safe-area inset - the CSS's `env(safe-area-inset-bottom)`.
+   * Passed in rather than read here so this stays a pure view: the shell already
+   * holds the insets for the rest of the screen.
+   */
+  bottomInset?: number;
 };
 
 /** `.mobile-nav` - the first five modules, as a bottom bar below 760px. */
-export function MobileNav({ module, nav, onModule }: MobileNavProps) {
+export function MobileNav({ module, nav, onModule, bottomInset = 0 }: MobileNavProps) {
   const s = useAppStyles();
   return (
-    <View style={s.mobileNav} accessibilityLabel="Primary navigation">
+    <View
+      style={[s.mobileNav, bottomInset > 0 && { paddingBottom: s.mobileNav.paddingBottom + bottomInset }]}
+      accessibilityLabel="Primary navigation">
       {nav.slice(0, 5).map((item) => {
         const active = module === item;
         return (

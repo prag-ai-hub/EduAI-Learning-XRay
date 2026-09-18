@@ -25,7 +25,7 @@ SUPABASE := supabase/node_modules/.bin/supabase
 .PHONY: help install install-frontend install-app install-backend \
         dev-frontend dev-app dev-web build-app dev-backend test test-frontend test-backend \
         lint lint-frontend lint-app lint-backend \
-        check db-start db-stop db-status db-push db-reset db-test db-bootstrap \
+        check check-deploy config-status db-start db-stop db-status db-push db-reset db-test db-bootstrap \
         migrate clean db-push-dry
 
 help: ## Show this help
@@ -85,7 +85,18 @@ lint-app:
 lint-backend:
 	cd $(BACKEND) && .venv/bin/ruff check . && .venv/bin/ruff format --check .
 
+config-status: ## What this environment can serve, and what blocks the rest
+	cd $(BACKEND) && DJANGO_SETTINGS_MODULE=$${DJANGO_SETTINGS_MODULE:-eduai_backend.settings.dev} .venv/bin/python manage.py config_status
+
 check: lint test ## Lint then test everything
+
+# The production gate, separate from `check` on purpose. It validates prod
+# settings against whatever `.env` it is run with, and a developer's local file
+# cannot hold production values - a real SECRET_KEY, a shared REDIS_URL - so
+# inside `check` it failed on every machine, every time, and a check that is
+# always red teaches people to stop reading it. Run this where the production
+# environment is loaded: in CI's release job, or on the host before a deploy.
+check-deploy: ## Django's --deploy checks against the loaded environment (run with production values)
 	cd $(BACKEND) && DJANGO_SETTINGS_MODULE=eduai_backend.settings.prod .venv/bin/python manage.py check --deploy
 
 # ---------------------------------------------------------------- database

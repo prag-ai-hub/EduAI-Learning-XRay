@@ -1,3 +1,6 @@
+import { getAuthenticatedUser, unauthorized } from "@/server/supabase-auth";
+import { complete } from "@/server/ai-proxy";
+
 type StudyGuideRequest = {
   subject?: string;
   concept?: string;
@@ -60,7 +63,7 @@ export async function POST(request: Request) {
       redact: body.studentName?.trim() ? { student_name: body.studentName.trim() } : {},
     });
     const openaiMs = Date.now() - startedAt;
-const raw = completion.content;
+    const raw = completion.content;
     if (typeof raw !== "string") return Response.json({ error: "The learning-analysis service returned an empty response." }, { status: 502 });
 
     let guide: StudyGuide;
@@ -74,5 +77,3 @@ const raw = completion.content;
     return Response.json({ error: error instanceof Error ? error.message : "Unexpected error" }, { status: 500 });
   }
 }
-import { getAuthenticatedUser, unauthorized } from "@/server/supabase-auth";
-import { complete } from "@/server/ai-proxy";

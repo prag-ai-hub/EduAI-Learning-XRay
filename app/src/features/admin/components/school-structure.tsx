@@ -5,11 +5,18 @@
  * Ported from frontend/app/ui/FunctionalEduAIApp.tsx `ClassDialog` (~1581),
  * `SchoolDialog` (~1582) and `AcademicYearDialog` (~1680).
  *
- * All three write into the workspace snapshot as formatted strings rather than
- * as records - `classes`, `schools` and `academicYears` are `string[]` on
- * `DemoState`, and the separator (" · ") is what every reader splits on. The
- * shapes are kept exactly, because the class picker, the heatmap and the
- * assessment dialogs all parse them.
+ * `SchoolDialog` and `AcademicYearDialog` still write into the workspace
+ * snapshot as formatted strings rather than as records - `schools` and
+ * `academicYears` are `string[]` on `DemoState`, and the separator (" · ") is
+ * what every reader splits on. Their shapes are kept exactly, because the class
+ * picker, the heatmap and the assessment dialogs all parse them.
+ *
+ * `ClassDialog` no longer does. It creates a real class through
+ * `POST /api/v1/schools/classes/`, and writes the snapshot only afterwards, as
+ * a cache of what the server said - see `@/features/roster/lib/workspace-mirror`
+ * for why that cache still exists and when it goes away. It used to write the
+ * snapshot and nothing else, which meant a school could "create a class" that
+ * no teacher, parent or assessment could ever attach to.
  *
  * ---------------------------------------------------------------------------
  * PLATFORM NOTE
@@ -29,10 +36,12 @@
 
 import { Text } from 'react-native';
 
-import { Field, Form, FormGrid, Select, SubmitButton } from '@/shared/components/form';
+import { createClass } from '@/features/roster/api/rosterApi';
+import { addClass } from '@/features/roster/lib/workspace-mirror';
+import { Field, Form, FormError, FormGrid, Select, SubmitButton } from '@/shared/components/form';
 import { DialogHead } from '@/shared/components/primitives';
 import { useAppStyles } from '@/shared/theme/styles';
-import type { DemoState, W } from '@/shared/types/workspace';
+import type { DemoState, User, W } from '@/shared/types/workspace';
 
 const BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB'];
 
@@ -41,37 +50,45 @@ const YEAR_STATUSES = ['Planned', 'Active', 'Archived'];
 /**
  * Create a class, its section and its subject in one go.
  *
- * Saving replaces any existing row for the same class/section/subject rather
- * than adding a second one, which is how re-entering a class updates its
- * strength instead of duplicating it.
+ * Three things about this form are the server's rules rather than this file's:
+ *
+ *  * **The teacher is sent as an id.** The picker used to submit nothing at all
+ *    - its `<Select>` had no `name`, so the chosen name never left the dialog.
+ *    Now it carries `user.id`, and only a Teacher of this school is accepted;
+ *    any other id gets "No such teacher at this school.", which is deliberately
+ *    the same answer as an id that does not exist.
+ *  * **The academic year is not asked for.** It defaults server-side to the
+ *    current Indian school year, which turns over in June. A school office
+ *    adding a class in March should not have to know that.
+ *  * **A duplicate is refused, not merged.** The old dialog replaced any
+ *    snapshot row with the same class/section/subject, which looked like an
+ *    update and was really a second copy of a class nobody else could see.
+ *    `classes_identity_key` makes the real one a 400 with a readable message,
+ *    and the message is shown.
+ *
+ * "Student strength" is gone with it. It fed the number in the snapshot string
+ * and nothing else; the server counts the roster instead, so a typed strength
+ * would have been a figure the product then quietly disagreed with.
  */
 export function ClassDialog({ state, setState, done }: W<'state' | 'setState' | 'done'>) {
   const s = useAppStyles();
-  const teachers = state.users.filter((user) => user.role === 'Teacher').map((user) => user.name);
+  const teachers = state.users
+    .filter((user: User) => user.role === 'Teacher')
+    .map((user: User) => ({ label: user.name, value: user.id }));
 
   return (
     <Form
-      onSubmit={(values) => {
-        const className = values.trimmed('className');
-        const section = values.trimmed('section').toUpperCase();
-        const subject = values.trimmed('subject');
-        const row = `Class ${className}${section} · ${subject} · ${values.get('students')} students`;
-        const prefix = `Class ${className}${section} · ${subject} ·`;
-        setState((current: DemoState) => ({
-          ...current,
-          classes: [
-            row,
-            // Older rows were written with a mis-encoded separator ("Â·"), so a
-            // duplicate would survive a plain startsWith. Normalising before the
-            // comparison is what the web app did, and dropping it would leave two
-            // rows for one class.
-            ...current.classes.filter((item) => !item.replace('Â·', '·').startsWith(prefix)),
-          ],
-          events: [
-            `Class subject created · Class ${className}${section} · ${subject}`,
-            ...current.events,
-          ],
-        }));
+      onSubmit={async (values) => {
+        // Anything thrown here lands in <FormError/> - so an ApiError's message
+        // is the server's own wording, including the 403 a school that has not
+        // been approved yet gets for every write.
+        const created = await createClass({
+          class_name: values.trimmed('className'),
+          section: values.trimmed('section'),
+          subject: values.trimmed('subject'),
+          teacher: values.trimmed('teacher') || null,
+        });
+        setState(addClass(created));
         done();
       }}>
       <DialogHead eyebrow="Class-first analysis" title="Create class & subject" />
@@ -83,16 +100,18 @@ export function ClassDialog({ state, setState, done }: W<'state' | 'setState' | 
         <Field name="className" label="Class" required defaultValue="6" />
         <Field name="section" label="Section" required defaultValue="C" />
         <Field name="subject" label="Subject" required defaultValue="Mathematics" />
-        <Field
-          name="students"
-          label="Student strength"
-          type="number"
-          min={1}
-          required
-          defaultValue="30"
-        />
       </FormGrid>
-      <Select label="Assigned teacher" options={teachers} />
+      {/* A placeholder rather than a pre-selected first teacher: a class with
+          nobody assigned is valid, and picking one for the administrator would
+          put a name on a class they never chose. */}
+      <Select
+        name="teacher"
+        label="Assigned teacher"
+        options={teachers}
+        disabled={!teachers.length}
+        placeholder={teachers.length ? 'No teacher assigned yet' : 'No teachers invited yet'}
+      />
+      <FormError />
       <SubmitButton title="Save class & subject" />
     </Form>
   );

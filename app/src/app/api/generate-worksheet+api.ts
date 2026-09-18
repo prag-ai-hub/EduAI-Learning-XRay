@@ -1,3 +1,6 @@
+import { getAuthenticatedUser, unauthorized } from "@/server/supabase-auth";
+import { complete } from "@/server/ai-proxy";
+
 type WorksheetRequestBody = {
   concept?: string;
   concepts?: string[];
@@ -98,5 +101,3 @@ const raw = completion.content;
     return Response.json({ error: message }, { status: 500 });
   }
 }
-import { getAuthenticatedUser, unauthorized } from "@/server/supabase-auth";
-import { complete } from "@/server/ai-proxy";

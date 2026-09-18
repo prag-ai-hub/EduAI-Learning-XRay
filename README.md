@@ -74,7 +74,9 @@ Run `make help` for the full target list.
 ## Verifying
 
 ```bash
-make check            # lint + both test suites + Django's --deploy check
+make config-status    # what this environment can serve, and what blocks the rest
+make check            # lint + every test suite
+make check-deploy     # Django's --deploy checks - run with production env loaded
 make test-frontend    # build, then the Node contract suite
 make test-backend     # the Django/pytest suite
 make db-test          # migration regression harness (local stack must be up)

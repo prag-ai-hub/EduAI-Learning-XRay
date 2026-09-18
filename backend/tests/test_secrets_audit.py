@@ -336,6 +336,14 @@ KNOWN_BENIGN_BLOBS = {
         "runs are the per-file content fingerprints under `fileInfos`, not keys. "
         "The path is gitignored now, so this blob cannot recur."
     ),
+    "84c9049bb56b6331d7cc8cfe8fa6b4b70121ee03": (
+        "backend/.env.example as committed in 46eea9f. The 'database URL with a password' "
+        "is `postgres:pass%40word@db.<ref>.supabase.co` inside a comment teaching that `@` "
+        "must be percent-encoded as %40 - a made-up password on a literal `<ref>` host, and "
+        "not either of the project's real database passwords. The example now reads "
+        "`your_pass%40word`, which `SYNTHETIC_MARKERS` recognises without an exemption, so "
+        "this blob cannot recur."
+    ),
 }
 
 

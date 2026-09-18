@@ -110,6 +110,11 @@ class Student(models.Model):
     `parents.ParentStudentLink` and exists only there.
     """
 
+    #: `students_status_check` (M19). Not TextChoices, because the column is a
+    #: plain TextField mapped from SQL this service does not own.
+    ACTIVE = "Active"
+    INACTIVE = "Inactive"
+
     id = models.TextField(primary_key=True)
     school = models.ForeignKey(School, models.DO_NOTHING, related_name="students")
     school_class = models.ForeignKey(

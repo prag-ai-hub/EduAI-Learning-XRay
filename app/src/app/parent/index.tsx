@@ -5,14 +5,21 @@
  *
  * The destination the role-aware redirect needs, and the first screen to read
  * the normalized read model rather than a teacher's workspace snapshot. It
- * shows only teacher-approved output: /api/parent/children is built field by
- * field in the database, so OCR transcripts, AI rationale and other people's
- * children are structurally absent rather than filtered here.
+ * shows only teacher-approved output: `parent_child_reports()` is built field
+ * by field in the database, so OCR transcripts, AI rationale and other
+ * people's children are structurally absent rather than filtered here.
  *
  * The web built its own Supabase client and then read /api/profile by hand to
  * recover from a 403. `useSession` already owns both, so this screen takes the
  * session and the profile from there and keeps `landingPath` as the one place
  * that decides where a role belongs.
+ *
+ * The data comes from Django (`GET /parents/reports`, plan row 13.3), not from
+ * the Expo server route this screen was ported against. That route read the
+ * same SQL function with the service-role key, which is to say it produced the
+ * right answer with none of what makes an answer trustworthy - no capability
+ * check, no throttle, no audit row. It has been deleted rather than kept as a
+ * fallback.
  *
  * Two additions on top of the port (plan row 12.2):
  *
@@ -31,45 +38,37 @@ import { useEffect, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 
-import { authFetch } from '@/features/auth/api/authApi';
 import { useSession } from '@/features/auth/hooks/use-session';
 import { landingPath } from '@/features/auth/roles';
+import {
+  ApiError,
+  childReports,
+  unlinkChild,
+  type ChildReport,
+} from '@/features/parents/api/parentsApi';
 import { LinkChildForm } from '@/features/parents/components/link-child-form';
 import { AppLoading, BrandLogo } from '@/shared/components/brand';
+import { AppButton, ButtonRow } from '@/shared/components/buttons';
+import { ConfirmDialog, ModalShell } from '@/shared/components/modal';
 import { Eyebrow } from '@/shared/components/primitives';
 import { useAppStyles } from '@/shared/theme/styles';
 
-/** One published assessment result, as `/api/parent/children` returns it. */
-type ChildResult = {
-  assessmentId: string;
-  title: string;
-  subject: string;
-  date: string;
-  score: number;
-  maxMarks: number;
-  feedback: string | null;
-  gaps: { concept: string; mastery: number }[];
-};
-
-type Child = {
-  studentId: string;
-  studentName: string;
-  rollNumber: string | null;
-  className: string;
-  schoolName: string;
-  results: ChildResult[];
-  resources: { id: string; title: string; type: string }[];
-};
+/* The payload shape lives in the feature slice beside the call that returns
+   it, so a field added to the read model is described in one place rather than
+   in every screen that happens to read it. */
 
 export default function ParentRoute() {
   const s = useAppStyles();
   const router = useRouter();
   const { session, profile, needsProfile, loading } = useSession();
 
-  const [children, setChildren] = useState<Child[] | null>(null);
+  const [children, setChildren] = useState<ChildReport[] | null>(null);
   const [error, setError] = useState('');
   /** Bumped after a code is redeemed, to re-read the list the link changed. */
   const [reload, setReload] = useState(0);
+  /** The child whose removal is awaiting confirmation. */
+  const [removing, setRemoving] = useState<ChildReport | null>(null);
+  const [removeError, setRemoveError] = useState('');
 
   useEffect(() => {
     if (loading) return;
@@ -86,19 +85,22 @@ export default function ParentRoute() {
     let alive = true;
     void (async () => {
       try {
-        const response = await authFetch('/api/parent/children', { cache: 'no-store' });
-        if (response.status === 403) {
-          // Signed in, but not a parent. Send them to their own landing rather
-          // than showing an error for a page that was never theirs.
+        const { children: reports } = await childReports();
+        if (alive) setChildren(reports ?? []);
+      } catch (cause) {
+        // Signed in, but not a parent: Django answers 403 because the caller
+        // holds no `parent.child.reports.read`. Send them to their own landing
+        // rather than showing an error for a page that was never theirs.
+        if (cause instanceof ApiError && cause.status === 403) {
           router.replace(landingPath(profile) as Href);
           return;
         }
-        const payload = await response.json();
-        if (!response.ok)
-          throw new Error(payload.error || "Your children's reports could not be loaded.");
-        if (alive) setChildren(payload.children || []);
-      } catch (cause) {
-        if (alive) setError(cause instanceof Error ? cause.message : 'Something went wrong.');
+        if (alive)
+          setError(
+            cause instanceof ApiError
+              ? cause.message
+              : "Your children's reports could not be loaded.",
+          );
       }
     })();
     return () => {
@@ -119,6 +121,21 @@ export default function ParentRoute() {
     );
 
   if (!children) return <AppLoading message="Loading your children's reports…" />;
+
+  const remove = async (child: ChildReport) => {
+    setRemoving(null);
+    setRemoveError('');
+    try {
+      await unlinkChild(child.studentId);
+      setReload((n) => n + 1);
+    } catch (cause) {
+      setRemoveError(
+        cause instanceof ApiError
+          ? cause.message
+          : `${child.studentName} could not be removed right now. Please try again.`,
+      );
+    }
+  };
 
   const linked = children.length
     ? `${children.length} linked child${children.length === 1 ? '' : 'ren'}`
@@ -210,8 +227,60 @@ export default function ParentRoute() {
                 ))}
               </>
             ) : null}
+
+            {/* The heading says "the class", and that is not padding. An
+                intervention hangs off an assessment, never off a student, so
+                two siblings in one class see the same list. Titled anything
+                more personal, a parent would read a plan written for thirty
+                children as a note about theirs. */}
+            {child.classInterventions.length ? (
+              <>
+                <Text accessibilityRole="header" style={s.parentSummaryValue}>
+                  What the class is working on next
+                </Text>
+                {child.classInterventions.map((plan) => (
+                  <View key={plan.id} style={s.parentGap}>
+                    <View style={s.parentGapHeader}>
+                      <Text style={s.parentSummaryValue}>{plan.concept}</Text>
+                      <Text style={s.parentSummaryLabel}>{plan.status}</Text>
+                    </View>
+                    <Text style={s.parentSummaryLabel}>
+                      {[plan.format, plan.duration].filter(Boolean).join(' · ')}
+                      {plan.followupDate ? ` · follow-up ${plan.followupDate}` : ''}
+                    </Text>
+                    <Text style={s.parentCardText}>
+                      Planned after {plan.title} ({plan.subject}).
+                    </Text>
+                  </View>
+                ))}
+                <Text style={s.parentSummaryLabel}>
+                  These are the teacher&apos;s plans for the whole class, not a report on your
+                  child.
+                </Text>
+              </>
+            ) : null}
+
+            {/* Ends this account's own access, nobody else's - the only unlink a
+                parent holds. Behind a confirmation because undoing it needs a new
+                code from the school, not a second tap. */}
+            <ButtonRow>
+              <AppButton
+                variant="link"
+                title="Remove from my account"
+                onPress={() => {
+                  setRemoveError('');
+                  setRemoving(child);
+                }}
+              />
+            </ButtonRow>
           </View>
         ))}
+
+        {removeError ? (
+          <View role="alert" style={s.parentCard}>
+            <Text style={s.parentCardText}>{removeError}</Text>
+          </View>
+        ) : null}
 
         <View style={s.parentCard}>
           <Text style={s.parentSummaryLabel}>
@@ -220,6 +289,18 @@ export default function ParentRoute() {
           </Text>
         </View>
       </View>
+
+      {removing ? (
+        <ModalShell label="Remove child" onClose={() => setRemoving(null)}>
+          <ConfirmDialog
+            eyebrow="Parent account"
+            title={`Remove ${removing.studentName} from your account?`}
+            text={`You will stop seeing ${removing.studentName}'s reports straight away. Nothing is deleted from the school's records. To see them again you will need a new invite code from ${removing.schoolName} - the old one will not work.`}
+            action="Remove"
+            onConfirm={() => void remove(removing)}
+          />
+        </ModalShell>
+      ) : null}
     </ScrollView>
   );
 }

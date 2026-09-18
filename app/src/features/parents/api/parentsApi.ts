@@ -1,22 +1,20 @@
 /**
- * The parent portal's network surface.
+ * The parent portal's network surface. Django, for all of it.
  *
- * Two services answer here, and which one is not arbitrary:
+ * That was briefly not true: the dashboard read `/api/parent/children`, an Expo
+ * server route that called `parent_child_reports()` with the Supabase
+ * service-role key. It answered correctly, and it answered outside everything
+ * that makes the answer trustworthy - no capability matrix, no throttle, no
+ * audit row, and a second copy of the scoping rule to keep in step with the
+ * first. Plan row 13.3 replaced it with `GET /parents/reports`, and that route
+ * is gone rather than left as a fallback: two paths to the same data is one
+ * path more than can be reasoned about.
  *
- *   * **Django** owns every write and the link itself - creating the account,
- *     redeeming an invite code, listing which children a link reaches. That is
- *     where the capability matrix, the redemption throttle and the audit trail
- *     live, and none of them can be enforced from a route this app serves.
- *   * **`/api/parent/children`** (app/src/app/api) still serves the dashboard's
- *     *reports*, because the read model behind it - `parent_child_reports()` -
- *     has not been ported to Django yet (plan row 13.3). It selects field by
- *     field, so OCR transcripts, AI rationale and other people's children are
- *     structurally absent from it.
- *
- * Both are scoped by the same `parent_student_links` rows, so they cannot
- * disagree about which children a parent has - only about how much they say
- * about each. When 13.3 lands, the second one goes and this module is the one
- * place that has to change.
+ * What the server returns is a whitelist, not a filter. `parent_child_reports`
+ * (M11) selects score, feedback, gaps and generated resources field by field,
+ * so `ocr_text`, `question_decisions_json` and every trace of AI rationale are
+ * structurally absent - not omitted here, absent there. Nothing in this module
+ * needs to redact anything, and nothing in it should try.
  */
 
 import { ApiError, api } from '@/shared/api/django';
@@ -75,9 +73,91 @@ export function redeemInviteCode(code: string) {
   }>('/api/v1/parents/links/redeem', { code });
 }
 
+/**
+ * End the caller's own access to one child.
+ *
+ * The link is marked revoked, not deleted, so the access that existed stays on
+ * the record. Getting it back takes a NEW code from the school: a revoked link
+ * is restored only by a fully valid, unspent code (migration M18), because
+ * revoking is also how a school withdraws access for safeguarding reasons, and
+ * an old code must not be a way around that.
+ */
+export function unlinkChild(studentId: string) {
+  return api.post<void>(`/api/v1/parents/children/${encodeURIComponent(studentId)}/unlink/`);
+}
+
 /** The children the caller's links reach. Empty until a code is redeemed. */
 export function linkedChildren() {
   return api.get<{ results: LinkedChild[] }>('/api/v1/parents/children/');
+}
+
+/* ------------------------------------------------------------------------- *
+ * The reports read model (M11), as `GET /parents/reports` shapes it
+ * ------------------------------------------------------------------------- */
+
+/** One published assessment result. */
+export type ChildResult = {
+  assessmentId: string;
+  title: string;
+  subject: string;
+  date: string;
+  score: number;
+  maxMarks: number;
+  feedback: string | null;
+  gaps: { concept: string; mastery?: number }[];
+};
+
+/** One generated resource the teacher published alongside a result. */
+export type ChildResource = {
+  id: string;
+  title: string;
+  type: string;
+  content?: unknown;
+};
+
+/**
+ * One planned intervention.
+ *
+ * `classInterventions`, never `interventions`, and the server names it that
+ * way for a reason worth repeating at the point a screen reads it:
+ * `public.interventions` carries an `assessment_id` and no `student_id`, so
+ * this is the plan for a CLASS's assessment. Two siblings in one class get
+ * byte-identical lists. Rendered under a heading that reads as personal, a
+ * parent would reasonably take "practise comparing fractions" as advice
+ * written about their own child. The UI has to say whose plan it is.
+ */
+export type ClassIntervention = {
+  id: string;
+  concept: string;
+  format: string | null;
+  duration: string | null;
+  status: string;
+  followupDate: string | null;
+  title: string;
+  subject: string;
+};
+
+/** One linked child and everything the school has approved about them. */
+export type ChildReport = {
+  studentId: string;
+  studentName: string;
+  rollNumber: string | null;
+  className: string;
+  schoolName: string;
+  results: ChildResult[];
+  resources: ChildResource[];
+  classInterventions: ClassIntervention[];
+};
+
+/**
+ * Every linked child's approved results, resources and class interventions.
+ *
+ * Scoping is inside the SQL function, which joins through the active links
+ * itself - so an unlinked parent gets an empty list rather than an error, and
+ * a revoked link stops answering without this having to know it happened.
+ */
+export function childReports() {
+  return api.get<{ children: ChildReport[] }>('/api/v1/parents/reports');
 }
 
 export { ApiError };

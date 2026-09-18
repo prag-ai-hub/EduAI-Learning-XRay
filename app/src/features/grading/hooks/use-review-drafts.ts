@@ -207,7 +207,7 @@ export function useReviewDrafts({
     // Paired with the debounce timer below. The dependency list is `drafts`
     // alone on purpose: `saveDrafts` is recreated on every render, so including
     // it would restart the 650 ms timer forever and never actually save.
-    // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSaveStatus('Saving…');
     const timer = setTimeout(() => saveDrafts(drafts), 650);
     return () => clearTimeout(timer);

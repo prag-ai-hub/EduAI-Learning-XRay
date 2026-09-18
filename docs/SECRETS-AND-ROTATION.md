@@ -19,7 +19,7 @@ Two rules apply without exception:
 | Secret | Held in | Reaches | Rotate | Blast radius if leaked |
 | --- | --- | --- | --- | --- |
 | `SECRET_KEY` | `backend/.env` | Django only | 90 days | Signed values forgeable. The API is token-authenticated and stateless, so the practical impact is low, but rotate anyway. |
-| `DB_PASSWORD` | `backend/.env` | Django only | 90 days, and on any staff departure | **Total.** Full read/write on the shared Postgres, bypassing every application check. |
+| `DB_PASSWORD` | `backend/.env`, once only | Django only | 90 days, and on any staff departure | **Total.** Full read/write on the shared Postgres, bypassing every application check. |
 | `SUPABASE_JWT_SECRET` | `backend/.env` | Django only | With the Supabase project's JWT secret | **Total authentication bypass.** Anyone holding it can mint a token for any user id. See the note below. |
 | `SUPABASE_SECRET_KEY` (service role) | root `.env` | Next.js server routes | 90 days | Full database access, and it is also the HMAC key for parent share links — rotating it invalidates outstanding links. |
 | `SUPABASE_PUBLISHABLE_KEY` (anon) | root `.env` | Served to the browser | On project rotation | Low: it is public by design and constrained by RLS. |
@@ -89,12 +89,113 @@ For `SUPABASE_JWT_SECRET`, steps 2 and 3 must land in the same window on both
 services, because a token signed with the new secret is rejected by a service
 still holding the old one.
 
+**Step 2 means every copy.** A secret stored twice is rotated once and then
+found again months later in the copy nobody remembered. That is exactly what
+happened to the database password below: `DB_PASSWORD` and `SUPABASE_DB_URL`
+both carried it, the second one was a full connection string, and it still held
+the exposed value after the first had moved on. Before rotating anything, run
+the sweep in **Verifying a rotation** to find every copy - and note that a plain
+`grep -r` from the repo root may be routed through a `.gitignore`-aware search
+that cannot see `.env` files at all. Use `command grep -r`.
+
+### Verifying a rotation
+
+Run this with the **old** value, from the repo root, before you revoke it. It
+answers one question: is any copy still on disk or in history?
+
+```bash
+OLD='<the old value>'
+
+# Every file, including gitignored ones. `command` matters: a bare `grep` may be
+# a wrapper that respects .gitignore and so cannot see .env at all.
+command grep -rlF --binary-files=without-match -- "$OLD" . \
+  --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=.git
+
+# Every commit reachable from any ref.
+git log --all --format=%H -S"$OLD"
+
+# The shape-based audit, which does not need to know the value.
+make check   # includes backend/tests/test_secrets_audit.py
+```
+
+Expect no output from the first two. Check the places a copy hides that are not
+files in this repo either: your shell history, `/tmp` and editor backups, CI and
+hosting provider environment settings, and any terminal scrollback or chat
+transcript you pasted it into. A secret pasted into a transcript cannot be
+withdrawn - rotate it rather than deleting the message.
+
 ## On suspected compromise
 
 Skip the staged rotation. Revoke first, restore service second — a leaked
 `DB_PASSWORD` or gateway secret costs more per minute than an outage does.
 Then: rotate, redeploy, and check `audit_events` and the gateway dashboard for
 activity in the exposure window.
+
+## Incident: provider API keys (OpenAI, Mistral)
+
+**Status: AWAITING ROTATION by the project owner.**
+
+On 2026-09-17 a live OpenAI key and a live Mistral key were pasted into a chat
+transcript and written into `backend/.env` from there. They work - both were
+verified against the providers - and they must be treated as public, for the
+same reason as every other secret on this page: a transcript is not a place a
+value can be withdrawn from.
+
+These two are the ones that cost money directly. An OpenAI key with no spend
+limit is a bill somebody else can run up, and unlike a database password there
+is no lock-out to make the theft obvious - it shows up as usage.
+
+What to do, in this order:
+
+1. In the provider dashboards, **create a new key** for each
+   (platform.openai.com -> API keys; console.mistral.ai -> API keys).
+2. Put the new values in `backend/.env` and restart the service.
+3. `make config-status` - AI grading and Handwriting OCR should read READY.
+4. **Revoke the old keys**, which is what actually ends the exposure.
+5. While in the OpenAI dashboard, set a monthly spend limit on the project. The
+   proxy's `ai` rate limit bounds how fast one account can spend; it is not a
+   cap on the bill, and the product's credits are its own meter, not the
+   provider's.
+
+Neither key was ever committed: `backend/.env` is gitignored, and the audit
+described in this document finds no copy in tracked source or reachable
+history.
+
+## Incident: hosted database password
+
+**Status: AWAITING ROTATION by the project owner.**
+
+Two database passwords for the hosted Supabase project were pasted into a chat
+transcript on 2026-09-09 and 2026-09-10. A transcript is not a place a secret
+can be withdrawn from, so **both must be treated as public** and the hosted
+project's password must be changed in the Supabase dashboard.
+
+Neither was ever committed: `git log -S` finds no commit carrying either, and
+the tracked tree is clean. They lived in `backend/.env`, which is gitignored.
+
+What was done on 2026-09-16, without console access:
+
+* `SUPABASE_DB_URL` was **removed** from `backend/.env`. It was a full
+  connection string and still carried the second exposed password long after
+  `DB_PASSWORD` had been changed - the duplicate-copy trap described above.
+  `make db-push` now stops with a clear message until it is set again.
+* The `DB_*` block was restored to the local stack, which is what this file and
+  `.env.example` both say it is for. It had drifted to the hosted host and port
+  while keeping the local user, password and TLS mode, so it could reach neither
+  database.
+* `DB_SSLMODE` was empty, which drops the option entirely and lets libpq fall
+  back to `prefer` - a silent plaintext connection to a hosted database. It is
+  empty again only because the block is local again; **set it to `require`
+  whenever `DB_HOST` is not localhost.**
+* `SECRET_KEY` was rotated locally (it was 37 characters and failed
+  `eduai.E005`). Production needs its own, set in the production environment.
+* A sweep of the working tree, the scratchpad and reachable git history found no
+  remaining copy of either password.
+
+The owner still has to: change the password in the Supabase dashboard, then set
+`SUPABASE_DB_URL` (with the new password, percent-encoded) only when pushing
+migrations. When it is done, change the status line above to
+`Status: ROTATED <date>`.
 
 ## Incident: Google OAuth pair
 
@@ -107,6 +208,12 @@ checkouts' object stores, unreachable from any ref and alive until a pruning
 `gc`. On a forge, objects in that state stay fetchable by hash long after they
 leave every branch. So **the pair still needs rotating**; until it is, treat the
 local-stack Google sign-in as compromised.
+
+The secret is still live in `backend/.env` on the developer machine, where the
+local Supabase stack reads it at `make db-start`. It is deliberately left in
+place rather than blanked: the staged rotation above is issue-new, update,
+revoke-old, and blanking it first only breaks local Google sign-in without
+making the exposed value any less exposed. Replace it there as part of step 2.
 
 Only the account owner can do this, in the Google console. When it is done,
 change the status line above to `Status: ROTATED <date>`. That is the whole

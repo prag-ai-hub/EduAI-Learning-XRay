@@ -73,3 +73,14 @@ EMAIL_HOST_USER = env("MAIL_USERNAME", default="")
 EMAIL_HOST_PASSWORD = env("MAIL_PASSWORD", default="")
 EMAIL_USE_TLS = env.bool("MAIL_USE_TLS", default=True)
 DEFAULT_FROM_EMAIL = env("MAIL_DEFAULT_SENDER", default="no-reply@eduaihub.in")
+
+
+# ---------------------------------------------------------------------------
+# The admin's session cookie, in production
+#
+# The API carries a bearer token and no cookie, so these apply to the back
+# office alone: an admin session travelling over plain HTTP would hand somebody
+# the whole database.
+# ---------------------------------------------------------------------------
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True

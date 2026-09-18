@@ -1,16 +1,12 @@
 import { aiProxyConfigured, health as proxyHealth } from "@/server/ai-proxy";
 
-// Genuine live probe of the two AI providers this app depends on.
-// No fabricated numbers: each check makes a real, cheap request to the provider
-// right now and reports whether it succeeded and how long it took.
-
-type ProviderCheck = {
-  provider: "mistral" | "openai";
-  ok: boolean;
-  ms: number;
-  status?: number;
-  error?: string;
-};
+// Genuine live probe, with no fabricated numbers: the check below makes a real
+// request right now and reports whether it succeeded and how long it took.
+//
+// It probes one thing, the AI proxy, because that is the only thing this app
+// can reach. The route used to describe a `ProviderCheck` per provider and call
+// Mistral and OpenAI itself; the keys moved to Django, so naming a provider
+// here would be reporting on something this side no longer talks to.
 
 /**
  * Provider reachability now belongs to the Django service: it holds the keys,
@@ -55,8 +51,6 @@ export async function GET(request: Request) {
     // holding the key. Reporting a guess here would be worse than reporting
     // nothing, because a wrong model fails every grading run while this page
     // still looks healthy.
-    // The model id is the analysis service's to know and verify - it is the
-    // side holding the key.
     model: proxy.model ?? { checkedBy: "django", ok: false },
   });
 }

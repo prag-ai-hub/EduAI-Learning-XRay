@@ -40,6 +40,9 @@ DETAIL_KEYS: dict[str, frozenset[str]] = {
     Action.SCHOOL_SUSPENDED: frozenset({"from", "to", "reason"}),
     Action.SCHOOL_REACTIVATED: frozenset({"from", "to", "reason"}),
     Action.SUPPORT_CROSS_TENANT_READ: frozenset({"grantId", "reason", "expiresAt"}),
+    # Not `email`: the trail is readable by every administrator of the
+    # school, and the row already names the account by id.
+    Action.ACCOUNT_ROLE_CHANGED: frozenset({"from", "to", "fromSchool", "toSchool", "via"}),
 }
 
 

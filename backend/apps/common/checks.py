@@ -199,3 +199,38 @@ def throttle_cache_is_shared(app_configs, **kwargs):
             id="eduai.E008",
         )
     ]
+
+
+@register(deploy=True)
+def admin_is_not_exposed_insecurely(app_configs, **kwargs):
+    """The back office is a session-cookie login over the public internet.
+
+    A Django superuser edits any school's rows directly, with none of the
+    capability matrix in front of them. Two conditions make that acceptable in
+    production and both are checkable: the session cookie must not travel in
+    clear, and the site must not be in DEBUG. A third is a judgement and only a
+    warning: `/admin/` is the first path a scanner tries.
+    """
+    if settings.DEBUG or not getattr(settings, "ADMIN_ENABLED", False):
+        return []
+
+    errors = []
+    if not getattr(settings, "SESSION_COOKIE_SECURE", False):
+        errors.append(
+            Error(
+                "The admin is enabled and SESSION_COOKIE_SECURE is off.",
+                hint="An admin session cookie sent over plain HTTP hands somebody the whole "
+                "database. Set SESSION_COOKIE_SECURE, or disable the admin with "
+                "DJANGO_ADMIN_ENABLED=False.",
+                id="eduai.E009",
+            )
+        )
+    if not getattr(settings, "CSRF_COOKIE_SECURE", False):
+        errors.append(
+            Error(
+                "The admin is enabled and CSRF_COOKIE_SECURE is off.",
+                hint="Set CSRF_COOKIE_SECURE, or disable the admin.",
+                id="eduai.E009",
+            )
+        )
+    return errors

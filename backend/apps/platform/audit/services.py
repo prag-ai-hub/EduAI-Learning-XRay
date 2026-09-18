@@ -51,8 +51,12 @@ class Action:
     """Action names. Stable strings - they are queried and reported on."""
 
     SCHOOL_REGISTERED = "school.registered"
+    SCHOOL_PROFILE_UPDATED = "school.profile.updated"
     SCHOOL_APPROVED = "school.approved"
     SCHOOL_REJECTED = "school.rejected"
     SCHOOL_SUSPENDED = "school.suspended"
     SCHOOL_REACTIVATED = "school.reactivated"
     SUPPORT_CROSS_TENANT_READ = "support.cross_tenant_read"
+    #: A role change - the most privileged edit there is. Written by
+    #: `manage.py set_role`, which is how the first Super Admin is made.
+    ACCOUNT_ROLE_CHANGED = "account.role.changed"

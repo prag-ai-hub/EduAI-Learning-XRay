@@ -9,6 +9,11 @@
  * teacher's roster screen is also called `StudentsView`, lives in the teacher
  * slice, and the two collided on one path in an earlier attempt at this port.
  *
+ * `StudentDialog` is no longer one of the snapshot-only dialogs. It creates a
+ * real child through `POST /api/v1/schools/students/` and writes the snapshot
+ * afterwards as a cache of what the server returned - see
+ * `@/features/roster/lib/workspace-mirror` for why that cache is still written.
+ *
  * `StudentEvidence` invents nothing. Every figure on it is derived from graded
  * results through `@/features/workspace/lib/analytics`, and with nothing graded
  * it says so rather than showing a zero - a 0% mastery reads as a judgement of
@@ -22,16 +27,22 @@
  * stays unnamed and unsubmitted exactly as it was.
  */
 
+import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 
+import {
+  ApiError,
+  createStudent,
+  listClasses,
+  type SchoolClass,
+} from '@/features/roster/api/rosterApi';
+import { addStudent } from '@/features/roster/lib/workspace-mirror';
 import { allGradeResults, studentMastery } from '@/features/workspace/lib/analytics';
 import { AppButton } from '@/shared/components/buttons';
-import { Field, Form, FormGrid, Select, SubmitButton } from '@/shared/components/form';
+import { Field, Form, FormError, FormGrid, Select, SubmitButton } from '@/shared/components/form';
 import { DialogHead } from '@/shared/components/primitives';
 import { useAppStyles } from '@/shared/theme/styles';
-import type { DemoState, GradeResult, Student, W } from '@/shared/types/workspace';
-
-const CLASSES = ['Class 6A', 'Class 6B', 'Class 7A'];
+import type { GradeResult, Student, W } from '@/shared/types/workspace';
 
 /** The reasons a teacher may attach to a result that the marks do not explain. */
 const OBSERVATIONS = [
@@ -44,31 +55,84 @@ const OBSERVATIONS = [
   'Accommodation required',
 ];
 
-/** Add one student to the school roster. */
+/**
+ * Add one student to the school roster.
+ *
+ * The class picker used to be three hardcoded strings - "Class 6A", "Class 6B",
+ * "Class 7A" - and the student was written into the workspace snapshot alone.
+ * It now lists the school's real classes and sends the chosen one's id, so the
+ * child lands on a class an assessment can be attached to.
+ *
+ * A school with no classes yet is the ordinary first-run case, not an error:
+ * `students.class_id` is nullable precisely because a school imports its roster
+ * before it finishes setting up its classes. So the picker goes quiet rather
+ * than blocking the form, and the dialog says what will happen instead.
+ */
 export function StudentDialog({ setState, done }: W<'setState' | 'done'>) {
+  const s = useAppStyles();
+  /** null while the class list is still being read. */
+  const [classes, setClasses] = useState<SchoolClass[] | null>(null);
+  const [classError, setClassError] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const rows = await listClasses();
+        if (alive) setClasses(rows);
+      } catch (cause) {
+        if (!alive) return;
+        // An empty list, so the dialog still works: a student can be added with
+        // no class, and refusing to open over a failed lookup would be worse.
+        setClasses([]);
+        setClassError(
+          cause instanceof ApiError ? cause.message : 'The class list could not be loaded.',
+        );
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const options = (classes ?? []).map((entry) => ({ label: entry.label, value: entry.id }));
+
   return (
     <Form
-      onSubmit={(values) => {
-        const student = {
-          id: `s${Date.now()}`,
-          name: values.get('name'),
-          roll: values.get('roll'),
-          className: values.get('className'),
-          status: 'Active',
-        };
-        setState((current: DemoState) => ({
-          ...current,
-          students: [student, ...current.students],
-          events: [`Student added · ${student.roll}`, ...current.events],
-        }));
+      onSubmit={async (values) => {
+        // Thrown errors land in <FormError/> with the server's own wording -
+        // a duplicate roll number, or the 403 an unapproved school gets.
+        const created = await createStudent({
+          name: values.trimmed('name'),
+          roll_number: values.trimmed('roll'),
+          school_class: values.trimmed('className') || null,
+        });
+        setState(addStudent(created));
         done();
       }}>
       <DialogHead eyebrow="School roster" title="Add student" />
       <Field name="name" label="Student name" required minLength={2} />
       <FormGrid>
         <Field name="roll" label="School student ID / roll" required />
-        <Select name="className" label="Class" options={CLASSES} />
+        {/* One Select throughout, so the grid does not reflow as the list
+            arrives. It stays optional - "No class yet" is a real answer here. */}
+        <Select
+          name="className"
+          label="Class"
+          options={options}
+          disabled={!options.length}
+          placeholder={
+            classes === null ? 'Loading classes…' : options.length ? 'No class yet' : 'No classes yet'
+          }
+        />
       </FormGrid>
+      {classes !== null && !options.length ? (
+        <Text style={s.modalCopy}>
+          {classError ||
+            'This school has no classes yet. The student will be added to the roster without one - create a class in Schools & Classes, then assign them.'}
+        </Text>
+      ) : null}
+      <FormError />
       <SubmitButton title="Save student" />
     </Form>
   );

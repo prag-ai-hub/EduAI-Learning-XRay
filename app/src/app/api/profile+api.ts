@@ -25,9 +25,16 @@ export async function PUT(request: Request) {
   }
   const db = getSupabaseServer();
 
-  // M7 invariant: a SuperAdmin belongs to no school, and SchoolAdmin/Teacher
-  // must belong to one.
-  const isSuperAdmin = /^priyadarshini\.adap@eduaihub(?:\.in)?$/i.test(authUser.email || "");
+  // A SuperAdmin used to be recognised here by a hardcoded personal email
+  // address, because nothing else could create a profile with no school (M7:
+  // a SuperAdmin belongs to no school, SchoolAdmin and Teacher must). That is
+  // now `manage.py set_role`, which creates the row for an account that has
+  // signed up and has none, refuses role/school pairings the database would,
+  // and writes an audit row naming who did it. A name in a regex could do none
+  // of those, and stopped being right the day that person left.
+  //
+  // So this route no longer promotes anybody. It completes the profile of an
+  // account that already has a row, and sends anyone else to register a school.
 
   const { data: existing, error: lookupError } = await db
     .from("users").select("school_id,role,status").eq("id", authUser.id).maybeSingle();
@@ -41,7 +48,7 @@ export async function PUT(request: Request) {
   // An invited teacher already has a row (the invitation upserts one), so they
   // never reach this branch. Someone signing up alone is sent to register their
   // school, which is the single reviewed front door.
-  if (!existing && !isSuperAdmin) {
+  if (!existing) {
     return Response.json(
       {
         error: "Register your school to finish setting up your account.",
@@ -51,7 +58,7 @@ export async function PUT(request: Request) {
     );
   }
 
-  const schoolId = isSuperAdmin ? null : existing?.school_id ?? null;
+  const schoolId = existing?.school_id ?? null;
   const profile = {
     id: authUser.id,
     school_id: schoolId,
@@ -59,7 +66,9 @@ export async function PUT(request: Request) {
     name,
     // Role and status are never chosen here: an existing row keeps what it has,
     // and the seeded SuperAdmin is recognised by email.
-    role: isSuperAdmin ? "SuperAdmin" : existing?.role || "Teacher",
+    // Never chosen here: the row exists, so it already carries a role, and a
+    // route that could set one would be a way to promote yourself.
+    role: existing?.role || "Teacher",
     phone: String(body.phone || "").trim(),
     status: existing?.status || "Active",
     profile_json: {

@@ -14,9 +14,11 @@
 
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/shared/components/animated-icon';
+// The app's hook, not React Native's: it honours the in-app appearance choice,
+// so the navigator's background follows the same scheme as every screen on it.
+import { useColorScheme } from '@/shared/hooks/use-color-scheme';
 
 SplashScreen.preventAutoHideAsync();
 

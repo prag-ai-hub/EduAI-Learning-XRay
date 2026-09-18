@@ -538,8 +538,17 @@ export const Grid = {
   fixed(width: number) {
     return { width, flexGrow: 0, flexShrink: 0 };
   },
-  /** `grid-column: 1 / -1` and `grid-column: span 2` on a full-width row. */
-  span: { width: '100%' as const, flexBasis: '100%' as const },
+  /**
+   * `grid-column: 1 / -1` and `grid-column: span 2` on a full-width row.
+   *
+   * Width only, never `flexBasis`. In the wrapping row a grid is, the two are
+   * the same - children do not shrink, so a 100%-wide one takes its own line.
+   * But `flexBasis` follows the parent's main axis, and a span card is also
+   * placed straight on a page, whose axis is vertical: there `flexBasis: 100%`
+   * made the card as tall as the scroll view and floated its content in the
+   * middle of the empty space.
+   */
+  span: { width: '100%' as const },
 } as const;
 
 /* ------------------------------------------------------------------------- *
@@ -867,7 +876,7 @@ export function createStyles(
       padding: compact ? Space.s17 : Space.s22,
       boxShadow: cardShadow,
     },
-    cardSpan2: compact ? { width: '100%' } : { width: '100%', flexBasis: '100%' },
+    cardSpan2: { width: '100%' }, // width, not flexBasis - see `Grid.span`
     cardTitle: {
       fontSize: FontSize.f18,
       letterSpacing: letterSpacing(FontSize.f18, Tracking.headingSoft),
@@ -1218,7 +1227,17 @@ export function createStyles(
     listItemBody: { gap: Space.s4, flexShrink: 1, minWidth: 0 },
     listItemText: { fontSize: FontSize.f10, color: p.text },
     listItemCaption: { fontSize: FontSize.f8, color: p.muted },
-    listItemAction: { color: p.navy, fontWeight: FontWeight.heavy, fontSize: FontSize.f10 },
+    /**
+     * `.list-item button` is `color:var(--navy)` and the web never overrides
+     * `--navy` for dark, so the only actionable thing in the row renders at
+     * roughly 1.5:1 on the dark surface - the same swap `insightText` already
+     * makes. Light is the web's colour, unchanged.
+     */
+    listItemAction: {
+      color: scheme === 'dark' ? p.onNavyFaint : p.navy,
+      fontWeight: FontWeight.heavy,
+      fontSize: FontSize.f10,
+    },
     activityList: { gap: Space.s7, maxHeight: 400, marginVertical: Space.s12 },
     activityRow: {
       flexDirection: 'row',
@@ -2259,10 +2278,19 @@ export function createStyles(
     },
     reviewSummaryLabel: { color: p.muted, fontSize: FontSize.f10, fontWeight: FontWeight.bold },
     reviewSummaryValue: { fontSize: FontSize.f19, color: p.text, fontWeight: FontWeight.bold },
+    /**
+     * Above 1050 the card overhangs the layout below it:
+     * `position:relative; z-index:2; margin-bottom:-148px`. The negative
+     * margin is half the pairing - `questionNavigator` answers it with
+     * `margin-top:162px`, so the rail clears the card by 14px while the
+     * workspace column fills the empty space to its left. Dropping it leaves
+     * both columns 148px low and the rail floating below the card.
+     */
     reviewSummaryCompact: {
       width: wide ? Layout.summaryCompactWidth : '100%',
       alignSelf: wide ? 'flex-end' : 'stretch',
-      marginBottom: Space.s14,
+      marginBottom: wide ? -(Space.s120 + Space.s28) : Space.s14, // -148px
+      zIndex: wide ? 2 : 0,
       padding: Space.s15,
       flexDirection: 'row',
       flexWrap: 'wrap',

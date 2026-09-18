@@ -1,9 +1,13 @@
-"""Rate limiting.
+"""Rate limiting: that the limits are enforced, and how they behave.
 
 The test settings switch throttling off so assertions elsewhere stay
 deterministic, so these tests turn it back on explicitly. That means the rules
 themselves are still covered - which is the point of disabling them by default
 rather than not having them.
+
+The companion file is tests/test_rate_limits.py, which asks the other question -
+whether every published route has a limit at all - by walking the URLconf. The
+numbers themselves live in apps/common/throttling.py.
 """
 
 import contextlib
@@ -15,7 +19,8 @@ from rest_framework.test import APIClient
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from apps.accounts.roles import SUPER_ADMIN
+from apps.accounts.roles import SCHOOL_ADMIN, SUPER_ADMIN
+from apps.common import throttling as rates
 
 pytestmark = pytest.mark.django_db
 
@@ -96,3 +101,76 @@ def test_health_is_never_throttled():
     with throttling(user="5/min", anon="5/min"):
         codes = [APIClient().get("/health").status_code for _ in range(10)]
     assert set(codes) == {200}
+
+
+# ---------------------------------------------------------------------------
+# The configured numbers, and the shape of a refusal (plan row 16.3)
+# ---------------------------------------------------------------------------
+
+
+def test_the_auth_scope_allows_exactly_its_ten(make_identity, api_client_for):
+    """The real number, on the real surface: parent sign-up is identity-only and
+    writes a row, so it is what an unthrottled script abuses first."""
+    assert rates.AUTH == "10/min"
+    client = api_client_for(identity=make_identity())
+    payload = {"name": "A. Kulkarni"}
+
+    with throttling(auth=rates.AUTH):
+        codes = [
+            client.post("/api/v1/accounts/parents", payload, format="json").status_code
+            for _ in range(10)
+        ]
+        refused = client.post("/api/v1/accounts/parents", payload, format="json")
+
+    assert all(code != 429 for code in codes), codes
+    assert refused.status_code == 429
+
+
+def test_a_refusal_uses_the_standard_envelope_and_says_when_to_retry(make_identity, api_client_for):
+    client = api_client_for(identity=make_identity())
+    payload = {"name": "A. Kulkarni"}
+
+    with throttling(auth="1/min"):
+        client.post("/api/v1/accounts/parents", payload, format="json")
+        refused = client.post("/api/v1/accounts/parents", payload, format="json")
+
+    assert refused.status_code == 429
+    # The one envelope the whole API answers failures in.
+    assert refused.json()["error"]["code"] == "throttled"
+    # Without this a client cannot back off except by guessing.
+    assert refused.headers["Retry-After"]
+
+
+def test_one_scope_is_one_allowance_across_the_views_that_share_it(
+    make_school, make_user, api_client_for
+):
+    """`user` is a per-person budget, not 120/min per endpoint. That is what
+    bounds a client looping over several endpoints in turn."""
+    client = api_client_for(make_user(SCHOOL_ADMIN, school=make_school()))
+
+    with throttling(user="1/min"):
+        first = client.get("/api/v1/billing/plans/")
+        # A different view, the same scope, the same spent bucket.
+        second = client.get("/api/v1/billing/subscription")
+
+    assert first.status_code != 429
+    assert second.status_code == 429
+
+
+def test_the_throttle_answers_before_the_view_does_any_work(make_school, make_user, api_client_for):
+    """Checkout refuses with 503 here because the tax settings are unset. Once
+    the bucket is empty it refuses with 429 instead - so the allowance is spent
+    before the handler runs, which is what makes it a defence rather than a
+    politeness."""
+    client = api_client_for(make_user(SCHOOL_ADMIN, school=make_school()))
+    body = {
+        "plan_code": "school_starter_monthly",
+        "billing": {"billing_name": "A School", "place_of_supply": "27"},
+    }
+
+    with throttling(checkout="1/min"):
+        first = client.post("/api/v1/billing/checkout/subscription", body, format="json")
+        second = client.post("/api/v1/billing/checkout/subscription", body, format="json")
+
+    assert first.status_code != 429
+    assert second.status_code == 429

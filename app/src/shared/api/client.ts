@@ -22,6 +22,15 @@ export type ApiClientOptions = {
 export type ApiClient = {
   get<T>(path: string): Promise<T>;
   post<T>(path: string, payload?: unknown): Promise<T>;
+  /** Partial update. The service uses PATCH, never PUT - see the roster views. */
+  patch<T>(path: string, payload?: unknown): Promise<T>;
+  /**
+   * Named `del` because `delete` is a reserved word and cannot be a shorthand
+   * method name here. Some deletes answer 204 (nothing), others 200 with the
+   * changed row - `DELETE /students/{id}/` marks a student Inactive and returns
+   * them - so the caller names the type it expects.
+   */
+  del<T>(path: string): Promise<T>;
 };
 
 export function createApiClient(options: ApiClientOptions): ApiClient {
@@ -70,5 +79,8 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     get: <T,>(path: string) => request<T>(path),
     post: <T,>(path: string, payload?: unknown) =>
       request<T>(path, { method: "POST", body: JSON.stringify(payload ?? {}) }),
+    patch: <T,>(path: string, payload?: unknown) =>
+      request<T>(path, { method: "PATCH", body: JSON.stringify(payload ?? {}) }),
+    del: <T,>(path: string) => request<T>(path, { method: "DELETE" }),
   };
 }

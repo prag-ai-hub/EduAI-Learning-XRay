@@ -318,6 +318,7 @@ export function icon(x: string): string {
         Overview: '⌂',
         Users: '♙',
         'Schools & Classes': '▦',
+        Billing: '₹',
       } as Record<string, string>
     )[x] || '⚙'
   );

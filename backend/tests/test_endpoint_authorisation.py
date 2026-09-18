@@ -33,6 +33,7 @@ from __future__ import annotations
 import inspect
 
 import pytest
+from django.conf import settings
 from django.urls import get_resolver
 
 from apps.accounts.capabilities import ALL_CAPABILITIES, ROLE_CAPABILITIES, capabilities_for
@@ -58,8 +59,11 @@ NO_CAPABILITY_REQUIRED = {
         "Authenticated via SupabaseIdentityAuthentication and throttled on the 'auth' scope."
     ),
     "MySchoolView": (
-        "Answers 'what is my own school, and has it been approved'. The caller's own row is the "
-        "whole scope; there is nothing to gate beyond being signed in."
+        "GET answers 'what is my own school, and has it been approved'. The caller's own row is "
+        "the whole scope; there is nothing to gate beyond being signed in, and every member of a "
+        "school may ask it. PATCH is NOT ungated: `get_permissions` returns "
+        "`requires(SCHOOL_PROFILE_EDIT)` for it, so editing the profile is the SchoolAdmin's - "
+        "see test_a_teacher_cannot_rename_the_school in apps/tenants/schools/tests/test_roster.py."
     ),
     "RazorpayWebhookView": (
         "Gateway callback. A gateway holds no bearer token, so there is no role to gate on: "
@@ -74,6 +78,16 @@ NO_CAPABILITY_REQUIRED = {
 }
 
 
+#: Django's admin is not part of this API surface and is deliberately excluded
+#: from the walk below. It is session-authenticated by a Django account, gated
+#: by that framework's own `is_staff` and per-model permissions rather than by
+#: this product's capability matrix, and every write through it is mirrored into
+#: `audit_events` (apps/common/admin.py). Walking it here would assert the wrong
+#: rule against the wrong surface - and did, loudly, the moment it was mounted.
+def _is_admin_route(path: str) -> bool:
+    return path.startswith(str(settings.ADMIN_URL).lstrip("/"))
+
+
 def _routes():
     """(path, view class, action) for everything the URLconf actually publishes."""
     found = []
@@ -83,6 +97,8 @@ def _routes():
             path = prefix + str(pattern.pattern)
             if hasattr(pattern, "url_patterns"):
                 walk(pattern, path)
+                continue
+            if _is_admin_route(path):
                 continue
             callback = pattern.callback
             view = getattr(callback, "cls", None) or getattr(callback, "view_class", None)

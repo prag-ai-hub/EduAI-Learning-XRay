@@ -20,13 +20,29 @@
  *    subtree and loses the page's scroll position, so the overlay is an
  *    absolutely positioned sibling instead - which is what the CSS was.
  *
- * "Press the backdrop, not the panel" is enforced structurally rather than by
- * comparing targets: the panel claims the touch responder, so a press on it
- * never reaches the backdrop's `Pressable`.
+ * "Press the backdrop, not the panel" is enforced structurally: the backdrop is
+ * an absolutely positioned SIBLING of the panel, not its parent, so a press on
+ * the panel cannot reach it - there is no ancestor to bubble to.
+ *
+ * It was previously the parent, relying on the panel claiming the touch
+ * responder (`onStartShouldSetResponder`) to stop the press. That holds on
+ * native and does NOT hold on react-native-web: a click on a `TextInput` inside
+ * the panel still reached the backdrop's `onPress`, so **clicking any field in
+ * any dialog closed the dialog**. Every form in the workspace was unusable in a
+ * browser - the class dialog, the student dialog, invites, settings. Verified
+ * in Chrome before and after; see the note in `ModalShell` below.
  */
 
 import type { ReactNode } from 'react';
-import { Modal as RNModal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  Modal as RNModal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { AppButton } from '@/shared/components/buttons';
 import { Field, Form, Select, SubmitButton } from '@/shared/components/form';
@@ -46,21 +62,25 @@ export function ModalShell({ label, onClose, children, visible = true }: ModalSh
   const s = useAppStyles();
 
   const overlay = (
-    <Pressable
-      style={s.modalBackdrop}
-      onPress={onClose}
-      accessible={false}
-      // The backdrop is a dismiss affordance, not a control; naming it would
-      // put a second "button" in the reading order in front of the dialog.
-      importantForAccessibility="no">
+    // `box-none`: the dimmed area itself is not pressable, its two children are.
+    // This View only centres them and paints the scrim.
+    <View style={s.modalBackdrop} pointerEvents="box-none">
+      <Pressable
+        // A sibling BEHIND the panel, filling the overlay. Dismissing by
+        // pressing outside works because this element is what "outside" is -
+        // not because a press inside was intercepted on its way here.
+        style={StyleSheet.absoluteFill}
+        onPress={onClose}
+        accessible={false}
+        // The backdrop is a dismiss affordance, not a control; naming it would
+        // put a second "button" in the reading order in front of the dialog.
+        importantForAccessibility="no"
+      />
       <View
         style={[s.modal, s.functionalModal]}
         accessibilityViewIsModal
         accessibilityLabel={label}
-        role="dialog"
-        // Claims the responder so a press inside the panel never reaches the
-        // backdrop. This is the RN equivalent of `e.target === e.currentTarget`.
-        onStartShouldSetResponder={() => true}>
+        role="dialog">
         <Pressable
           style={s.modalClose}
           onPress={onClose}
@@ -70,7 +90,7 @@ export function ModalShell({ label, onClose, children, visible = true }: ModalSh
         </Pressable>
         <ScrollView showsVerticalScrollIndicator={false}>{children}</ScrollView>
       </View>
-    </Pressable>
+    </View>
   );
 
   if (Platform.OS === 'web') return visible ? overlay : null;

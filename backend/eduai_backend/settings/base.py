@@ -9,6 +9,8 @@ from pathlib import Path
 
 import environ
 
+from apps.common.throttling import THROTTLE_RATES
+
 # backend/eduai_backend/settings/base.py -> backend/
 BASE_DIR = Path(__file__).resolve().parents[2]
 
@@ -33,8 +35,17 @@ ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 # Applications
 # --------------------------------------------------------------------------
 DJANGO_APPS = [
+    # The operator back office. It is a SECOND authority path into the same
+    # data: a Django superuser edits rows directly, with none of the capability
+    # matrix in front of them and no support grant. That is what makes it useful
+    # for support and what makes it dangerous, so every write through it is
+    # mirrored into `audit_events` (see apps/common/admin.py) and it is switched
+    # off by setting DJANGO_ADMIN_ENABLED=False.
+    "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
+    "django.contrib.messages",  # the admin's flash messages
+    "django.contrib.sessions",  # the admin is cookie-authenticated, unlike the API
     "django.contrib.staticfiles",
 ]
 
@@ -67,12 +78,18 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Sessions, auth and messages exist for the admin only. The API itself is
+    # token-authenticated and stateless: DRF's authentication runs per view and
+    # never reads a session, so nothing about the API changes by their presence.
+    "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     # The API authenticates with a bearer token, never a cookie, so CSRF is
     # not the attack this service faces. The middleware stays in anyway: DRF
     # views are csrf_exempt so nothing here is affected, and its absence would
     # otherwise be indistinguishable from having forgotten it.
     "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "apps.common.middleware.ApiSecurityHeadersMiddleware",
 ]
@@ -90,6 +107,7 @@ TEMPLATES = [
             "context_processors": [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
@@ -168,17 +186,10 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.ScopedRateThrottle",
     ],
-    "DEFAULT_THROTTLE_RATES": {
-        "anon": "30/min",
-        "user": "120/min",
-        "auth": "10/min",  # sign-in / registration surfaces
-        "ai": "20/min",  # the OpenAI proxy - caps runaway spend
-        # Checkout creates an order at the gateway. Idempotency already stops a
-        # double-clicked Pay button creating two of them; this stops a script
-        # from filling the gateway's dashboard with abandoned orders.
-        "checkout": "12/min",
-        "webhook": "300/min",  # gateway retries must not be throttled away
-    },
+    # The numbers, and why each is what it is, live in one reviewable module -
+    # apps/common/throttling.py - which the rate-limit tests import too, so a
+    # threshold cannot be tuned in one place and asserted in another.
+    "DEFAULT_THROTTLE_RATES": THROTTLE_RATES,
     "EXCEPTION_HANDLER": "apps.common.exceptions.api_exception_handler",
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
 }
@@ -268,6 +279,33 @@ GST_SAC_CODE = env("GST_SAC_CODE", default="")
 GST_RATE_BPS = env.int("GST_RATE_BPS", default=None)
 
 # --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# The operator back office
+#
+# Enabled by default because a deployment without it has no way to look at a
+# row, and disabling it is one variable. Two things make it safe enough to
+# leave on: the login is a Django account that exists nowhere else in the
+# product (`manage.py createsuperuser`), and every write is mirrored into
+# `audit_events`.
+#
+# `DJANGO_ADMIN_URL` moves it off /admin/. That is not a security control -
+# anyone who can reach the host can find it - but it keeps the login page out
+# of the way of automated scanners hammering the obvious path.
+# ---------------------------------------------------------------------------
+ADMIN_ENABLED = env.bool("DJANGO_ADMIN_ENABLED", default=True)
+# `or "admin"` rather than a default alone: django-environ applies a default
+# only when the variable is ABSENT, and `.env.example` ships the key present and
+# blank. Without it a copied template mounts the admin at "/", which takes over
+# the root path, 404s /admin/, and makes `_is_admin_route` in the authorisation
+# and rate-limit walkers match every route in the product.
+ADMIN_URL = (env("DJANGO_ADMIN_URL", default="").strip("/") or "admin") + "/"
+
+# The admin is the only cookie-authenticated surface here, so these matter only
+# for it. Prod tightens them further.
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+
 # CORS - the Cloudflare-hosted frontend origin only.
 # --------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS")

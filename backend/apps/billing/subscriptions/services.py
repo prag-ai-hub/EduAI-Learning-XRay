@@ -73,6 +73,7 @@ from django.utils import timezone
 from rest_framework.exceptions import APIException, ValidationError
 
 from apps.accounts.models import User
+from apps.accounts.roles import SCHOOL_ADMIN
 from apps.platform.audit.services import record
 from apps.tenants.schools.models import School
 
@@ -94,10 +95,32 @@ PERIOD_MONTHS = {
     Plan.BillingPeriod.ANNUAL: 12,
 }
 
+#: How long a school pack's capacity lasts. The X-Ray packs are one-off
+#: purchases - nothing renews - but capacity has to lapse eventually, or a pack
+#: bought two years ago is redeemable at two-year-old prices. Twelve months, the
+#: owner's answer on 2026-09-18.
+PACK_VALIDITY_MONTHS = 12
+
+
+def is_pack(plan: Plan) -> bool:
+    """A school's one-off purchase of capacity, rather than a subscription.
+
+    A parent's top-up is also `one_time` and is NOT a pack: it buys credits and
+    grants no period at all, so it never appears in a school's entitlement.
+    """
+    return (
+        plan.audience == Plan.Audience.SCHOOL and plan.billing_period == Plan.BillingPeriod.ONE_TIME
+    )
+
+
 #: `audit_events.school_id` is NOT NULL, and a parent has no school. Rows for
 #: tenant-less actions carry this instead. It is not a school id and no school
 #: can collide with it - school ids are all `school-{uuid}`.
 PLATFORM_SCOPE = "platform"
+
+#: The granted tier. Named here because two places need it - the approval that
+#: grants it and the checkout that refuses to sell it.
+FREE_PLAN_CODE = "xray_free"
 
 
 class BillingAction:
@@ -225,7 +248,15 @@ def add_months(moment: datetime, months: int) -> datetime:
 
 
 def period_end(plan: Plan, start: datetime) -> datetime | None:
-    """When a period beginning at `start` ends. None for a one-off purchase."""
+    """When a period beginning at `start` ends.
+
+    For a school pack this is the date its capacity lapses, not a renewal
+    boundary - nothing renews, and the subscription row says so by carrying
+    `cancel_at_period_end`. `None` only for a parent top-up, which buys credits
+    and has no period to end.
+    """
+    if is_pack(plan):
+        return add_months(start, PACK_VALIDITY_MONTHS)
     months = PERIOD_MONTHS.get(plan.billing_period)
     return add_months(start, months) if months else None
 
@@ -407,6 +438,12 @@ def _resolve_plan(code: str, audience: str) -> Plan:
     plan = Plan.objects.filter(code=code, audience=audience, status=Plan.Status.ACTIVE).first()
     if plan is None:
         raise ValidationError({"plan_code": "No such plan is on sale."})
+    if plan.amount_paise <= 0:
+        # The free tier is granted when a school is approved, never bought. An
+        # order for zero at the gateway is an error, not a free trial.
+        raise ValidationError(
+            {"plan_code": "That plan is granted, not sold. It cannot be checked out."}
+        )
     return plan
 
 
@@ -674,7 +711,8 @@ def activate_subscription(payment: Payment) -> Subscription:
                 current_period_start=start,
                 current_period_end=period_end(plan, start),
                 grace_until=None,
-                cancel_at_period_end=False,
+                # A pack never renews: its period end is an expiry date.
+                cancel_at_period_end=is_pack(plan),
                 gateway=GATEWAY_RAZORPAY,
                 started_at=now,
                 created_at=now,
@@ -690,7 +728,7 @@ def activate_subscription(payment: Payment) -> Subscription:
             current.current_period_end = period_end(plan, start)
             # Payment settles the reasons a subscription was in trouble.
             current.grace_until = None
-            current.cancel_at_period_end = False
+            current.cancel_at_period_end = is_pack(plan)
             current.ended_at = None
             current.cancelled_at = None
             current.updated_at = now
@@ -737,6 +775,185 @@ def activate_subscription(payment: Payment) -> Subscription:
             else None,
             "paymentId": str(payment.id),
         },
+    )
+    return subscription
+
+
+def _school_credit_holder(school_id: str):
+    """Who a school's capacity is credited to.
+
+    Credits are metered per user - `consume_credit(p_user_id, …)` charges a
+    person, and `schools` has no balance column - so a school's pack has to land
+    on somebody. It lands on the school's first administrator, who is the
+    account that registered it and the one holding "Assign credits" for handing
+    it on to teachers.
+
+    Checked, not assumed: `payments` carries `school_id` and no payer, so the
+    buyer cannot be recovered from the payment row. If that becomes important -
+    two administrators, and the one who paid wants the balance - the payment
+    needs a payer column, which is a migration, not a guess here.
+    """
+    return (
+        User.objects.filter(school_id=school_id, role=SCHOOL_ADMIN)
+        .order_by("created_at", "id")
+        .first()
+    )
+
+
+def grant_pack_credits(payment: Payment) -> int:
+    """Add a school pack's capacity to the school. Idempotent. Returns the amount.
+
+    A pack is sold as "up to 50 students, 1 assessment", and a credit is one
+    student's answer sheet analysed - so the pack's `credits_included` IS its
+    coverage, and without this the number on the pricing page would buy nothing.
+
+    Idempotent under a row lock on the payment, exactly as a parent top-up is -
+    and for the reason spelled out there: M15 narrowed the unique index on
+    `credit_transactions` to live consumption rows, so nothing in the database
+    refuses a second `purchase`. Without the lock two redeliveries of the same
+    `payment.captured` both read "no ledger row", both insert, and a ₹30,000
+    Bulk pack grants 1000 credits. The `operation_key` is left on the row for
+    humans reading the ledger; the lock is what makes this safe.
+    """
+    operation_key = f"pack:{payment.id}"
+    with transaction.atomic():
+        # `of=("self",)`: `plan` is a nullable FK, so `select_related` makes it
+        # a LEFT OUTER JOIN and Postgres refuses FOR UPDATE on the nullable side.
+        payment = (
+            Payment.objects.select_for_update(of=("self",))
+            .select_related("plan")
+            .get(pk=payment.pk)
+        )
+        if payment.plan is None or not payment.school_id:
+            raise PaymentNotSettled("A pack needs both a school and a plan.")
+        credits = payment.plan.credits_included
+        if credits <= 0:
+            return 0
+
+        holder = _school_credit_holder(payment.school_id)
+        if holder is None:
+            # Nothing to credit it to. Not an error the gateway should retry:
+            # the subscription is active and the capacity is recoverable by
+            # hand.
+            logger.error(
+                "pack credits unassigned: school %s has no administrator", payment.school_id
+            )
+            return 0
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "select 1 from public.credit_transactions where operation_key = %s limit 1",
+                [operation_key],
+            )
+            if cursor.fetchone() is not None:
+                return 0
+
+            cursor.execute(
+                "insert into public.credit_transactions "
+                "(id, user_id, amount, transaction_type, operation_key, reference, "
+                " reason, payment_id) "
+                "values (%s, %s, %s, 'purchase', %s, %s, %s, %s)",
+                [
+                    str(uuid.uuid4()),
+                    str(holder.id),
+                    credits,
+                    operation_key,
+                    payment.gateway_payment_id or payment.gateway_order_id,
+                    f"{payment.plan.name}: {credits} analyses",
+                    str(payment.id),
+                ],
+            )
+        User.objects.filter(pk=holder.id).update(
+            total_credits=F("total_credits") + credits, updated_at=timezone.now()
+        )
+
+    record(
+        action=BillingAction.CREDITS_TOPPED_UP,
+        school_id=payment.school_id,
+        actor_id=None,  # a gateway confirmation has no human actor
+        entity_type="payment",
+        entity_id=str(payment.id),
+        detail={"planCode": payment.plan.code, "credits": credits, "holder": str(holder.id)},
+    )
+    return credits
+
+
+def grant_free_plan(school: School, *, actor_id: str | None = None) -> Subscription | None:
+    """Put a newly approved school on the free tier. Idempotent.
+
+    The owner's answer on 2026-09-18: a school reaching Active starts on X-Ray
+    Free without a checkout. Nothing is charged, so there is no order, no
+    invoice and no GST - which is also why this works before the payment gateway
+    exists at all.
+
+    A school that already has a live subscription keeps it: approval is not a
+    reason to replace something somebody paid for, and re-approving after a
+    suspension must not hand out a second free pack.
+    """
+    plan = Plan.objects.filter(
+        code=FREE_PLAN_CODE, audience=Plan.Audience.SCHOOL, status=Plan.Status.ACTIVE
+    ).first()
+    if plan is None:
+        logger.warning("free tier not granted: no active %s plan", FREE_PLAN_CODE)
+        return None
+    if live_subscription(school.id) is not None:
+        return None
+
+    now = timezone.now()
+    subscription = Subscription.objects.create(
+        id=uuid.uuid4(),
+        school_id=school.id,
+        plan=plan,
+        status=Subscription.Status.ACTIVE,
+        current_period_start=now,
+        current_period_end=period_end(plan, now),
+        grace_until=None,
+        # Free capacity lapses on the same 12-month clock as a paid pack, and
+        # never renews itself into a second free allowance.
+        cancel_at_period_end=True,
+        gateway=GATEWAY_RAZORPAY,
+        started_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    School.objects.filter(pk=school.id).update(plan_id=plan.id, updated_at=now)
+
+    holder = _school_credit_holder(school.id)
+    granted = 0
+    if holder is not None and plan.credits_included > 0:
+        operation_key = f"free:{school.id}"
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(
+                "select 1 from public.credit_transactions where operation_key = %s limit 1",
+                [operation_key],
+            )
+            if cursor.fetchone() is None:
+                cursor.execute(
+                    "insert into public.credit_transactions "
+                    "(id, user_id, amount, transaction_type, operation_key, reference, reason) "
+                    "values (%s, %s, %s, 'purchase', %s, %s, %s)",
+                    [
+                        str(uuid.uuid4()),
+                        str(holder.id),
+                        plan.credits_included,
+                        operation_key,
+                        school.id,
+                        f"{plan.name}: {plan.credits_included} analyses",
+                    ],
+                )
+                User.objects.filter(pk=holder.id).update(
+                    total_credits=F("total_credits") + plan.credits_included,
+                    updated_at=now,
+                )
+                granted = plan.credits_included
+
+    record(
+        action=BillingAction.SUBSCRIPTION_ACTIVATED,
+        school_id=school.id,
+        actor_id=actor_id,
+        entity_type="subscription",
+        entity_id=str(subscription.id),
+        detail={"planCode": plan.code, "granted": True, "credits": granted},
     )
     return subscription
 

@@ -51,6 +51,23 @@ export function StudentsView({ state, open }: W<'state' | 'open'>) {
       .includes(query.toLowerCase()),
   );
 
+  /**
+   * The mock said "Class 6A · Mathematics" because its roster was one
+   * seeded class. This one is every class the teacher is assigned to, filtered
+   * by the search box, so the eyebrow names what is actually on screen -
+   * otherwise it asserts a class the rows below it contradict.
+   */
+  const classes = [...new Set(students.map((student: Student) => student.className))].filter(
+    Boolean,
+  );
+  const rosterEyebrow = !students.length
+    ? query
+      ? 'No match'
+      : 'No students yet'
+    : `${classes.length === 1 ? classes[0] : `${classes.length} classes`} · ${
+        students.length
+      } ${students.length === 1 ? 'student' : 'students'}`;
+
   return (
     <>
       <PageHead
@@ -67,7 +84,7 @@ export function StudentsView({ state, open }: W<'state' | 'open'>) {
       </PageHead>
 
       <Card>
-        <CardHead eyebrow="Class 6A · Mathematics" title="Student roster">
+        <CardHead eyebrow={rosterEyebrow} title="Student roster">
           <TextInput
             style={[s.compactInput, { minWidth: 190 }]}
             placeholder="Search name or roll number"
@@ -107,7 +124,12 @@ export function StudentsView({ state, open }: W<'state' | 'open'>) {
                   </Text>
                 </View>
                 <View style={s.userRowCell}>
-                  <StatusPill tone="success">{student.status}</StatusPill>
+                  {/* Inactive is a real roster state (M19 constrains the
+                      column to the two), and a green pill on it reads as
+                      enrolled. */}
+                  <StatusPill tone={student.status === 'Active' ? 'success' : 'neutral'}>
+                    {student.status}
+                  </StatusPill>
                 </View>
                 <View style={s.userRowActions}>
                   <Text style={s.listItemAction}>View evidence →</Text>

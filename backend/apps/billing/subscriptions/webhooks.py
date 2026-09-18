@@ -513,7 +513,17 @@ def _apply_capture(row: PaymentEvent, payment: Payment, entity: dict) -> str:
     else:
         subscription = services.activate_subscription(payment)
         row.subscription = subscription
+        # A school pack is capacity, not just access: its credits are what the
+        # pricing table sells ("up to 50 students, 1 assessment"). Granted after
+        # the subscription so a redelivery finds both already done.
+        granted = (
+            services.grant_pack_credits(payment)
+            if payment.plan is not None and services.is_pack(payment.plan)
+            else 0
+        )
         outcome = f"subscription {subscription.status} to {subscription.current_period_end}"
+        if granted:
+            outcome += f", {granted} credits"
         subscription_id = str(subscription.id)
 
     record(

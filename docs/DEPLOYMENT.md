@@ -33,6 +33,8 @@ application tables that `supabase/migrations` owns:
 psql "$PSQL_URL" -f backend/scripts/bootstrap_schema.sql
 python manage.py migrate            # or: make migrate
 python manage.py seed_plans         # nothing can be sold without a plan
+                                    # amounts are placeholders until the owner
+                                    # confirms them - see docs/PRICING.md
 ```
 
 `migrate` is a no-op against `public` by design — every application model is
@@ -50,14 +52,33 @@ Everything in `backend/.env.example`, with these mattering most in production:
 | `CORS_ALLOWED_ORIGINS` | Name the frontend origin(s). Wildcard or empty fails the deploy check. |
 | `DB_*` | Supabase session pooler, `DB_SSLMODE=require`. |
 | `SUPABASE_JWT_SECRET` | Every request authenticates against it. Empty fails the deploy check. |
-| `REDIS_URL` | **Set it.** Without a shared cache, throttle counters are per-process, so every rate limit is N times looser under N gunicorn workers. |
+| `REDIS_URL` | **Set it.** Without a shared cache, throttle counters are per-process, so every rate limit is N times looser under N gunicorn workers. The limits themselves, and what each protects, are in `backend/apps/common/throttling.py`; `backend/tests/test_rate_limits.py` asserts that every published route has one. |
 | `SECURE_SSL_REDIRECT` | Defaults on. Turn off only if the platform speaks plain HTTP to the container *and* terminates TLS itself. |
+
+Before that, ask the host what it can actually serve:
+
+```bash
+make config-status          # or: manage.py config_status --strict
+```
+
+It reports each capability — sign-in, AI grading, OCR, payments, GST invoicing,
+email, shared rate limits — as READY, DEGRADED or BLOCKED, and for anything
+blocked prints what it stops and where the value comes from. It reports whether
+a secret is present, never its value, so the output is safe to paste into a
+ticket. `--strict` exits non-zero while anything non-optional is blocked, which
+is what a release job wants.
 
 Run the checks before shipping — they are errors, not warnings:
 
 ```bash
+make check-deploy
+# which is:
 DJANGO_SETTINGS_MODULE=eduai_backend.settings.prod python manage.py check --deploy
 ```
+
+Run it with the **production** environment loaded. `make check` deliberately
+does not include it: against a developer's local `.env` it can only ever fail
+on the values production alone has.
 
 ## Health
 
